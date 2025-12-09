@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import documents_router, search_router, chat_router
+from .routers import documents_router, search_router, chat_router, settings_router
 from .services.vector_store import get_vector_store
 
 # Configure logging
@@ -72,6 +72,7 @@ app.add_middleware(
 app.include_router(documents_router, prefix=settings.api_prefix)
 app.include_router(search_router, prefix=settings.api_prefix)
 app.include_router(chat_router, prefix=settings.api_prefix)
+app.include_router(settings_router, prefix=settings.api_prefix)
 
 
 @app.get("/")

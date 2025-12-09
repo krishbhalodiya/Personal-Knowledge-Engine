@@ -65,6 +65,9 @@ from ..utils.parsers import parse_document_bytes, detect_document_type, get_pars
 from ..utils.chunking import chunk_text, Chunk
 from .vector_store import VectorStoreService, get_vector_store
 
+# Import embedding provider (lazy import to avoid circular dependencies)
+# The actual import happens in the method to allow for flexible provider switching
+
 logger = logging.getLogger(__name__)
 
 
@@ -407,24 +410,52 @@ class IngestionService:
         chunks: List[Chunk],
     ) -> None:
         """
-        Store document chunks in the vector store.
+        Store document chunks in the vector store WITH REAL EMBEDDINGS.
         
-        NOTE ON EMBEDDINGS:
-        ===================
-        Currently storing chunks WITHOUT embeddings.
-        Phase 3 will add the embedding generation step.
+        EMBEDDING PROCESS:
+        ==================
         
-        For now, we store:
-        - Chunk IDs (document_id + chunk_index)
-        - Chunk content (documents field in ChromaDB)
-        - Metadata (document_id, filename, chunk_index, etc.)
+        1. Extract text content from each chunk
+        2. Generate embeddings using configured provider (local or OpenAI)
+        3. Store embeddings + text + metadata in ChromaDB
         
-        ChromaDB can store documents without embeddings,
-        but search won't work until embeddings are added.
-        We'll update this in Phase 3.
+        WHY BATCH EMBEDDING?
+        ====================
+        
+        Instead of:
+            for chunk in chunks:
+                embedding = provider.embed(chunk.content)  # Slow!
+        
+        We do:
+            embeddings = provider.embed_batch([c.content for c in chunks])  # Fast!
+        
+        Batch processing is 5-10x faster because:
+        - GPU processes all at once
+        - Reduces API call overhead (for OpenAI)
+        - More efficient memory usage
+        
+        WHAT GETS STORED IN CHROMADB:
+        =============================
+        
+        For each chunk:
+        - id: "doc_abc123_chunk_0"
+        - embedding: [0.234, -0.567, ...] (384 or 1536 floats)
+        - document: "The actual chunk text..."
+        - metadata: {document_id, filename, chunk_index, ...}
         """
         if not chunks:
             return
+        
+        # Import embedding provider here to avoid circular imports
+        from .embeddings import get_embedding_provider
+        
+        # Get the configured embedding provider
+        embedding_provider = get_embedding_provider()
+        
+        logger.info(
+            f"Generating embeddings for {len(chunks)} chunks "
+            f"using {embedding_provider.model_name}"
+        )
         
         # Prepare data for ChromaDB
         ids = []
@@ -447,20 +478,32 @@ class IngestionService:
                 "token_count": chunk.token_count,
             })
         
-        # For now, create placeholder embeddings (zeros)
-        # These will be replaced with real embeddings in Phase 3
-        # ChromaDB requires embeddings to add documents
-        placeholder_embeddings = [[0.0] * settings.embedding_dimension for _ in ids]
+        # Generate REAL embeddings using the configured provider
+        # This is the key change from Phase 2!
+        try:
+            embeddings = embedding_provider.embed_batch(documents)
+            logger.info(f"Generated {len(embeddings)} embeddings ({embedding_provider.dimension} dimensions)")
+        except Exception as e:
+            logger.error(f"Failed to generate embeddings: {e}")
+            raise ValueError(f"Embedding generation failed: {e}")
+        
+        # Verify embedding dimensions match what ChromaDB expects
+        if embeddings and len(embeddings[0]) != settings.embedding_dimension:
+            logger.warning(
+                f"Embedding dimension ({len(embeddings[0])}) differs from "
+                f"configured dimension ({settings.embedding_dimension}). "
+                f"This may cause issues with existing data."
+            )
         
         # Add to vector store
         self.vector_store.add_documents(
             ids=ids,
-            embeddings=placeholder_embeddings,
+            embeddings=embeddings,
             documents=documents,
             metadatas=metadatas,
         )
         
-        logger.info(f"Stored {len(chunks)} chunks for document {document.id}")
+        logger.info(f"Stored {len(chunks)} chunks with embeddings for document {document.id}")
 
 
 # =============================================================================
