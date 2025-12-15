@@ -34,6 +34,7 @@ OAUTH 2.0 FLOW EXPLAINED
 
 import logging
 import json
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -44,6 +45,9 @@ from google.auth.transport.requests import Request
 from ...config import settings
 
 logger = logging.getLogger(__name__)
+
+# Relax scope validation as Google often adds/normalizes scopes
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
 # Scopes we need
 SCOPES = [
