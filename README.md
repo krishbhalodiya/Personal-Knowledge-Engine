@@ -156,12 +156,14 @@ OPENAI_API_KEY=sk-your-key
 | POST | `/api/documents/upload` | Upload document |
 | GET | `/api/documents` | List documents |
 | DELETE | `/api/documents/{id}` | Delete document |
-| GET | `/api/search?q=...` | Semantic search |
-| POST | `/api/search/hybrid` | Hybrid search |
+| GET | `/api/documents/{id}/chunks` | View document chunks |
+| GET | `/api/search?q=...` | Semantic search (vector only) |
+| POST | `/api/search/hybrid` | Hybrid search (vector + keyword) |
 | POST | `/api/chat` | Q&A chat |
 | POST | `/api/chat/stream` | Streaming Q&A |
 | GET | `/api/settings` | Get current settings |
-| PUT | `/api/settings` | Update providers |
+| GET | `/api/settings/providers` | List available providers |
+| POST | `/api/settings/test-embedding` | Test embedding generation |
 
 ### Coming Soon
 | Method | Endpoint | Description |
