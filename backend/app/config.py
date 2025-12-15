@@ -89,10 +89,10 @@ class Settings(BaseSettings):
     google_gemini_api_key: Optional[str] = None
     
     # Gemini Models:
-    # - gemini-2.0-flash-exp: Latest experimental, fastest
-    # - gemini-1.5-pro: Best quality, longer context
-    # - gemini-1.5-flash: Fast and efficient
-    google_gemini_model: str = "gemini-2.0-flash-exp"
+    # - gemini-2.0-flash: Latest standard Flash
+    # - gemini-2.0-flash-exp: Experimental
+    # - gemini-1.5-pro: Legacy Pro
+    google_gemini_model: str = "gemini-2.0-flash"
     
     # =========================
     # Chunking
