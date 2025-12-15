@@ -165,13 +165,15 @@ OPENAI_API_KEY=sk-your-key
 | GET | `/api/settings/providers` | List available providers |
 | POST | `/api/settings/test-embedding` | Test embedding generation |
 
-### Coming Soon
+### Google Integration
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/gmail/auth` | Gmail OAuth |
-| POST | `/api/gmail/sync` | Sync emails |
-| GET | `/api/drive/auth` | Drive OAuth |
-| POST | `/api/drive/sync` | Sync documents |
+| GET | `/api/auth/google/url` | Get OAuth authorization URL |
+| GET | `/api/auth/google/status` | Check auth status |
+| GET | `/api/gmail/auth/status` | Check Gmail auth status |
+| POST | `/api/gmail/sync` | Sync recent emails |
+| GET | `/api/drive/auth/status` | Check Drive auth status |
+| POST | `/api/drive/sync` | Sync recent Drive files |
 
 ## Development
 

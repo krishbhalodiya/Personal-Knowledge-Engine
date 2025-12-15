@@ -65,6 +65,9 @@ class GoogleAuthService:
         self.redirect_uri = settings.google_redirect_uri
         self.token_path = settings.data_dir / "google_tokens.json"
         
+        # Expose scopes
+        self.SCOPES = SCOPES
+        
         if not self.client_id or not self.client_secret:
             logger.warning("Google Client ID/Secret not configured.")
     

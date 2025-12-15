@@ -229,6 +229,74 @@ class IngestionService:
             title=title,
             metadata=metadata,
         )
+
+    async def ingest_text(
+        self,
+        text: str,
+        filename: str,
+        title: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Document:
+        """
+        Ingest a document from raw text.
+        
+        Useful for content that is already text (e.g. emails, notes).
+        """
+        logger.info(f"Starting ingestion for text: {filename}")
+        
+        if not text:
+            raise ValueError("Empty text content")
+        
+        if not filename:
+            raise ValueError("Filename required")
+
+        # Step 2: Generate document ID
+        # Convert text to bytes for hash generation
+        content_bytes = text.encode('utf-8')
+        doc_id = self._generate_document_id(content_bytes, filename)
+        
+        # Check if already exists
+        if doc_id in self._documents:
+            logger.info(f"Document already exists: {doc_id}")
+            return self._documents[doc_id]
+        
+        # Step 3: Set type
+        # For direct text ingestion, we default to TXT or infer from filename extension
+        try:
+            doc_type = detect_document_type(filename)
+        except ValueError:
+            doc_type = DocumentType.TXT
+
+        # Step 5: Chunk (Skip parsing as we already have text)
+        chunks = chunk_text(text)
+        logger.info(f"Created {len(chunks)} chunks")
+        
+        # Step 6: Store file locally
+        file_path = await self._store_file(content_bytes, filename, doc_id)
+        
+        # Step 7: Create document record
+        now = datetime.utcnow()
+        document = Document(
+            id=doc_id,
+            filename=filename,
+            title=title or self._extract_title(text, filename),
+            doc_type=doc_type,
+            content=text,
+            file_path=str(file_path),
+            chunk_count=len(chunks),
+            created_at=now,
+            updated_at=now,
+            metadata=metadata or {},
+        )
+        
+        # Step 8: Store chunks in vector store
+        await self._store_chunks(document, chunks)
+        
+        # Save document reference
+        self._documents[doc_id] = document
+        
+        logger.info(f"Successfully ingested text document: {doc_id}")
+        return document
     
     async def delete_document(self, doc_id: str) -> bool:
         """
