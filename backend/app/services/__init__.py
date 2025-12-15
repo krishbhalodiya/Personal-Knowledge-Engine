@@ -2,6 +2,7 @@
 
 from .vector_store import VectorStoreService, get_vector_store
 from .ingestion import IngestionService, get_ingestion_service
+from .search import SearchService, get_search_service
 from .embeddings import (
     EmbeddingProvider,
     LocalEmbeddingProvider,
@@ -18,6 +19,9 @@ __all__ = [
     # Ingestion
     "IngestionService",
     "get_ingestion_service",
+    # Search
+    "SearchService",
+    "get_search_service",
     # Embeddings
     "EmbeddingProvider",
     "LocalEmbeddingProvider",
