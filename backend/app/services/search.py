@@ -376,7 +376,7 @@ class SearchService:
             fetched = []
             if results['ids']:
                 for i, cid in enumerate(results['ids']):
-                    meta = results['metadatas'][i]
+                    meta = results['metadatas'][i] or {}
                     fetched.append(SearchResult(
                         chunk_id=cid,
                         document_id=meta.get('document_id', 'unknown'),
