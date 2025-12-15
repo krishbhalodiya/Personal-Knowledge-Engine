@@ -42,6 +42,9 @@ class DriveService:
             
             return results.get('files', [])
         except HttpError as error:
+            if error.resp.status == 403 and "accessNotConfigured" in str(error):
+                logger.error("Drive API not enabled. Please enable it in Google Cloud Console.")
+                raise ValueError("Google Drive API not enabled in Google Cloud Console.")
             logger.error(f"An error occurred: {error}")
             return []
 
