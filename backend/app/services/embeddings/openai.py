@@ -220,7 +220,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         """
         self._api_key = api_key or settings.openai_api_key
         self._model_name = model_name or settings.openai_embedding_model
-        self._dimension = settings.openai_embedding_dimension
+        # Use the property that auto-detects dimension based on model
+        self._dimension = settings.embedding_dimension
         
         # Lazy load the client
         self._client = None
