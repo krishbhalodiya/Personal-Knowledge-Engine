@@ -33,8 +33,8 @@ A hybrid personal knowledge engine with **configurable local/cloud processing**.
 
 | Component | Local Option | Cloud Option |
 |-----------|--------------|--------------|
-| Embeddings | sentence-transformers (MiniLM) | OpenAI Ada-002 |
-| LLM | llama.cpp (Mistral-7B) | OpenAI GPT-4 |
+| Embeddings | sentence-transformers (MiniLM) | OpenAI text-embedding-3-large (3072 dim) |
+| LLM | llama.cpp (Mistral-7B) | OpenAI GPT-5.2 Pro / Gemini 2.0 Flash |
 | Vector Store | ChromaDB | ChromaDB |
 | Backend | Python 3.11+, FastAPI | - |
 | Frontend | React, TypeScript, TailwindCSS | - |

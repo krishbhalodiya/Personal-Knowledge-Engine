@@ -118,6 +118,18 @@ class DriveService:
                 
                 # Determine extension for filename if needed
                 filename = file['name']
+                mime_type = file['mimeType']
+                
+                # Append extension if missing, based on what we downloaded as
+                if mime_type == 'application/vnd.google-apps.document':
+                    if not filename.endswith('.txt'):
+                        filename += '.txt'
+                elif mime_type == 'application/vnd.google-apps.spreadsheet':
+                    if not filename.endswith('.pdf'):
+                        filename += '.pdf'
+                elif mime_type == 'application/vnd.google-apps.presentation':
+                    if not filename.endswith('.pdf'):
+                        filename += '.pdf'
                 
                 # Ingest
                 await self.ingestion_service.ingest_bytes(
