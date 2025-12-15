@@ -57,16 +57,16 @@ class Settings(BaseSettings):
     # - text-embedding-ada-002: 1536 dims, older but reliable
     # - text-embedding-3-small: 1536 dims, better quality, cheaper
     # - text-embedding-3-large: 3072 dims, best quality, more expensive
-    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_model: str = "text-embedding-3-large"
     
     # Auto-detect dimension based on model (will override this)
-    openai_embedding_dimension: int = 1536
+    openai_embedding_dimension: int = 3072
     
     # OpenAI Chat Models:
-    # - gpt-4-turbo-preview: Latest GPT-4 Turbo
-    # - gpt-4o: Latest GPT-4 Optimized (as of 2024)
-    # - gpt-3.5-turbo: Faster, cheaper
-    openai_chat_model: str = "gpt-4o"
+    # - gpt-5.2-pro: Latest flagship (Dec 2025)
+    # - gpt-5.2: Standard high-intelligence
+    # - gpt-4o: Previous generation optimized
+    openai_chat_model: str = "gpt-5.2-pro"
     
     # =========================
     # Local LLM (llama.cpp)
@@ -89,10 +89,9 @@ class Settings(BaseSettings):
     google_gemini_api_key: Optional[str] = None
     
     # Gemini Models:
-    # - gemini-2.0-flash: Latest standard Flash
-    # - gemini-2.0-flash-exp: Experimental
-    # - gemini-1.5-pro: Legacy Pro
-    google_gemini_model: str = "gemini-2.0-flash"
+    # - gemini-3-pro-preview: Latest Gemini 3 Pro (Preview)
+    # - gemini-2.0-flash: Fast and efficient
+    google_gemini_model: str = "gemini-3-pro-preview"
     
     # =========================
     # Chunking
