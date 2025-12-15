@@ -155,30 +155,6 @@ OPENAI_CHAT_MODEL=gpt-4o
 
 ---
 
-## Model Selection by Use Case
-
-### Personal Knowledge Base (Mixed Content)
-- **Embeddings**: `text-embedding-3-small` (good balance)
-- **LLM**: `gpt-4o` or `gemini-2.0-flash-exp`
-
-### Technical Documentation
-- **Embeddings**: `text-embedding-3-large` (better for code/technical)
-- **LLM**: `gpt-4o` (better reasoning)
-
-### Long Documents (Books, Research Papers)
-- **Embeddings**: `text-embedding-3-large` (more dimensions = better)
-- **LLM**: `gemini-1.5-pro` (1M token context!)
-
-### Privacy-Sensitive (Medical, Legal)
-- **Embeddings**: `local` (all-MiniLM-L6-v2)
-- **LLM**: `local` (Mistral-7B)
-
-### Cost-Sensitive
-- **Embeddings**: `text-embedding-3-small` (cheapest good option)
-- **LLM**: `gemini-2.0-flash-exp` (free tier available)
-
----
-
 ## Future Models
 
 The system is designed to easily add new models. When new models are released:

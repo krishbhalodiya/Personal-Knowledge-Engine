@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     
     # =========================
     # Local Embeddings (sentence-transformers)
-    # =========================
+    # =========================================
     local_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     local_embedding_dimension: int = 384
     

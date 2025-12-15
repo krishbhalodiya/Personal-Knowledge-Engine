@@ -40,7 +40,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..config import settings
-from ..services.embeddings import get_embedding_provider, get_provider_info
+from ..services.embeddings import get_embedding_provider, get_provider_info as get_emb_info
+from ..services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -128,57 +129,19 @@ async def get_settings():
 @router.get("/providers")
 async def get_providers():
     """
-    Get information about available embedding providers.
-    
-    Shows both local and cloud provider details.
-    
-    EXAMPLE RESPONSE:
-    ```json
-    {
-        "current": "local",
-        "providers": {
-            "local": {
-                "name": "Local (sentence-transformers)",
-                "model": "all-MiniLM-L6-v2",
-                "dimension": 384,
-                "status": "available",
-                "pros": ["Free", "Private", "Offline"],
-                "cons": ["Lower quality than cloud"]
-            },
-            "openai": {
-                "name": "OpenAI",
-                "model": "text-embedding-ada-002",
-                "dimension": 1536,
-                "status": "available" or "api_key_missing",
-                "pros": ["Best quality", "Fast"],
-                "cons": ["Costs money", "Data sent to cloud"]
-            }
-        }
-    }
-    ```
+    Get information about available embedding and LLM providers.
     """
-    # Get current provider info
-    current_info = get_provider_info()
+    # Get current embedding provider info
+    emb_info = get_emb_info()
     
-    # Build provider details
-    providers = {
+    # Embedding Providers
+    embedding_providers = {
         "local": {
             "name": "Local (sentence-transformers)",
             "type": "local",
             "model": settings.local_embedding_model,
             "dimension": settings.local_embedding_dimension,
             "status": "active" if settings.embedding_provider == "local" else "available",
-            "pros": [
-                "Free - no API costs",
-                "Private - data stays local",
-                "Offline - works without internet",
-                "Consistent - same input = same output",
-            ],
-            "cons": [
-                "Lower quality than cloud models",
-                "Uses local CPU/RAM",
-                "First load is slow (downloads model)",
-            ],
         },
         "openai": {
             "name": "OpenAI",
@@ -190,25 +153,53 @@ async def get_providers():
                 else "api_key_missing" if not settings.openai_api_key
                 else "available"
             ),
-            "pros": [
-                "Highest quality embeddings",
-                "Fast inference",
-                "8K token context",
-                "Excellent multilingual support",
-            ],
-            "cons": [
-                "Costs $0.0001/1K tokens",
-                "Data sent to OpenAI servers",
-                "Requires internet connection",
-            ],
         },
     }
     
+    # LLM Providers
+    llm_providers = {
+        "local": {
+            "name": "Local (llama.cpp)",
+            "type": "local",
+            "model": settings.llm_model_path or "Not configured",
+            "status": (
+                "active" if settings.llm_provider == "local"
+                else "model_missing" if not settings.llm_model_path
+                else "available"
+            ),
+        },
+        "openai": {
+            "name": "OpenAI",
+            "type": "openai",
+            "model": settings.openai_chat_model,
+            "status": (
+                "active" if settings.llm_provider == "openai"
+                else "api_key_missing" if not settings.openai_api_key
+                else "available"
+            ),
+        },
+        "gemini": {
+            "name": "Google Gemini",
+            "type": "gemini",
+            "model": settings.google_gemini_model,
+            "status": (
+                "active" if settings.llm_provider == "gemini"
+                else "api_key_missing" if not settings.google_gemini_api_key
+                else "available"
+            ),
+        }
+    }
+    
     return {
-        "current_provider": settings.embedding_provider,
-        "current_model": current_info.get("model_name"),
-        "current_dimension": current_info.get("dimension"),
-        "providers": providers,
+        "embedding": {
+            "current": settings.embedding_provider,
+            "info": emb_info,
+            "options": embedding_providers
+        },
+        "llm": {
+            "current": settings.llm_provider,
+            "options": llm_providers
+        }
     }
 
 
