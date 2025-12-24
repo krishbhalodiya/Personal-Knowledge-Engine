@@ -32,10 +32,11 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from ..models.documents import DocumentResponse, DocumentListResponse, Document
 from ..services.ingestion import IngestionService, get_ingestion_service
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,11 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB in bytes
 
 # Allowed file extensions
-ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.md', '.markdown', '.txt', '.text'}
+ALLOWED_EXTENSIONS = {
+    '.pdf', '.docx', '.doc', '.md', '.markdown', '.txt', '.text',
+    # Image formats (OCR)
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp'
+}
 
 
 @router.post("/upload", response_model=DocumentResponse)
@@ -359,4 +364,111 @@ async def get_document_chunks(
         "chunks": chunks,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.get("/{document_id}/download")
+async def download_document(
+    document_id: str,
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """
+    Download the original document content as a text file.
+    
+    This endpoint is useful for:
+    - Viewing the full document content
+    - Downloading emails or documents that were synced
+    - Exporting content for external use
+    
+    EXAMPLE:
+    ```bash
+    curl "http://localhost:8000/api/documents/doc_abc123/download" -o document.txt
+    ```
+    """
+    # Check if document exists
+    document = ingestion_service.get_document(document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document not found: {document_id}"
+        )
+    
+    # Get the content
+    content = document.content or ""
+    
+    # Try to read from stored file if content is empty
+    if not content:
+        file_path = settings.documents_dir / f"{document_id}_{document.filename}"
+        alt_patterns = [
+            settings.documents_dir / f"doc_{document_id.replace('doc_', '')}_{document.filename}",
+            settings.documents_dir / document.filename,
+        ]
+        
+        for path in [file_path] + alt_patterns:
+            if path.exists():
+                try:
+                    content = path.read_text(encoding='utf-8')
+                    break
+                except Exception:
+                    pass
+    
+    if not content:
+        raise HTTPException(
+            status_code=404,
+            detail="Document content not available for download"
+        )
+    
+    # Create filename for download
+    download_filename = document.filename
+    if not download_filename.endswith('.txt'):
+        download_filename = f"{document.filename}.txt"
+    
+    return Response(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{download_filename}"'
+        }
+    )
+
+
+@router.get("/{document_id}/view")
+async def view_document(
+    document_id: str,
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """
+    View the document content inline (not as download).
+    
+    Returns the document content for display in the UI.
+    """
+    # Check if document exists
+    document = ingestion_service.get_document(document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document not found: {document_id}"
+        )
+    
+    # Get the content
+    content = document.content or ""
+    
+    # Try to read from stored file if content is empty
+    if not content:
+        # Look for the file in documents directory
+        for file_path in settings.documents_dir.glob(f"*{document_id}*"):
+            if file_path.is_file():
+                try:
+                    content = file_path.read_text(encoding='utf-8')
+                    break
+                except Exception:
+                    pass
+    
+    return {
+        "document_id": document_id,
+        "filename": document.filename,
+        "title": document.title,
+        "doc_type": document.doc_type.value,
+        "content": content,
+        "metadata": document.metadata,
     }

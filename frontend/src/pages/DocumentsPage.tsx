@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Upload, RefreshCw, Trash2, File, Mail, FileText, Loader2, HardDrive } from 'lucide-react';
+import { Upload, RefreshCw, Trash2, File, Mail, FileText, Loader2, HardDrive, AlertCircle, Image } from 'lucide-react';
 import client from '../api/client';
-import { Document, GoogleAuthStatus } from '../types';
+import type { Document, GoogleAuthStatus } from '../types/index.js';
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   
   // Auth status
   const [gmailAuth, setGmailAuth] = useState<GoogleAuthStatus | null>(null);
@@ -42,14 +43,50 @@ export default function DocumentsPage() {
     checkAuth();
   }, []);
 
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
   const handleSync = async (source: 'gmail' | 'drive') => {
     setSyncing(source);
+    setSyncError(null);
+    setSyncMessage(null);
+    
     try {
-      await client.post(`/${source}/sync`, source === 'gmail' ? { max_results: 10 } : { limit: 10 });
+      // Gmail: Use primary filter to skip promotions, also skip promotional patterns
+      // Drive: Just limit results
+      const payload = source === 'gmail' 
+        ? { 
+            max_results: 20,
+            filter_type: 'primary',  // Only primary inbox
+            skip_promotional: true   // Also skip promotional-looking emails
+          } 
+        : { limit: 10 };
+      
+      const res = await client.post(`/${source}/sync`, payload);
+      
+      // Show sync stats
+      if (res.data.skipped > 0) {
+        setSyncMessage(`Synced ${res.data.processed} emails (${res.data.skipped} promotional skipped)`);
+      } else {
+        setSyncMessage(`Synced ${res.data.processed} items`);
+      }
+      
       await fetchDocuments();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert(`Failed to sync ${source}`);
+      const errorDetail = err.response?.data?.detail || err.message;
+      
+      // Check if it's an auth error
+      if (err.response?.status === 401 || err.response?.status === 500) {
+        setSyncError(`${source === 'gmail' ? 'Gmail' : 'Drive'} sync failed. Your Google authorization may have expired. Please reconnect your Google account.`);
+        // Reset auth status to show connect button
+        if (source === 'gmail') {
+          setGmailAuth({ authenticated: false });
+        } else {
+          setDriveAuth({ authenticated: false });
+        }
+      } else {
+        setSyncError(`Failed to sync ${source}: ${errorDetail}`);
+      }
     } finally {
       setSyncing(null);
     }
@@ -97,6 +134,7 @@ export default function DocumentsPage() {
   const getIcon = (type: string) => {
     if (type === 'email') return Mail;
     if (type === 'pdf') return FileText;
+    if (type === 'image') return Image;
     return File;
   };
 
@@ -113,10 +151,47 @@ export default function DocumentsPage() {
           <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition-colors">
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             <span>Upload File</span>
-            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            <input 
+              type="file" 
+              className="hidden" 
+              onChange={handleUpload} 
+              disabled={uploading}
+              accept=".pdf,.docx,.doc,.md,.markdown,.txt,.text,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.tif,.webp"
+            />
           </label>
         </div>
       </div>
+
+      {/* Sync Messages */}
+      {syncError && (
+        <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm">{syncError}</p>
+          </div>
+          <button 
+            onClick={() => setSyncError(null)}
+            className="text-amber-600 hover:text-amber-800 text-sm font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      
+      {syncMessage && !syncError && (
+        <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800">
+          <RefreshCw className="w-5 h-5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm">{syncMessage}</p>
+          </div>
+          <button 
+            onClick={() => setSyncMessage(null)}
+            className="text-green-600 hover:text-green-800 text-sm font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Sync Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

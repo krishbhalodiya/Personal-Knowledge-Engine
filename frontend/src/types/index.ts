@@ -12,10 +12,12 @@ export interface Document {
 export interface SearchResult {
   document_id: string;
   chunk_id: string;
-  text: string;
+  filename: string;
+  content: string;
   score: number;
+  chunk_index: number;
   metadata: Record<string, any>;
-  doc_metadata: Record<string, any>;
+  highlighted_content?: string;
 }
 
 export interface ChatMessage {

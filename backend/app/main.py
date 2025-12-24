@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import documents_router, search_router, chat_router, settings_router, google_auth_router, gmail_router, drive_router
+from .routers import documents_router, search_router, chat_router, settings_router, google_auth_router, gmail_router, drive_router, folders_router
 from .services.vector_store import get_vector_store
 
 # Configure logging
@@ -62,7 +62,7 @@ app = FastAPI(
 # Configure CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],  # React dev servers
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,6 +76,7 @@ app.include_router(settings_router, prefix=settings.api_prefix)
 app.include_router(google_auth_router, prefix=settings.api_prefix)
 app.include_router(gmail_router, prefix=settings.api_prefix)
 app.include_router(drive_router, prefix=settings.api_prefix)
+app.include_router(folders_router, prefix=settings.api_prefix)
 
 
 @app.get("/")

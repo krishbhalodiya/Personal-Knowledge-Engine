@@ -1,96 +1,56 @@
-"""
-Application configuration using Pydantic Settings.
-All settings can be overridden via environment variables.
-"""
-
 from pathlib import Path
 from typing import Optional, Literal
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings with environment variable support."""
-    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
     
-    # Application
     app_name: str = "Personal Knowledge Engine"
     debug: bool = False
     api_prefix: str = "/api"
     
-    # Paths
     base_dir: Path = Path(__file__).parent.parent.parent
     data_dir: Path = base_dir / "data"
     documents_dir: Path = data_dir / "documents"
     chroma_dir: Path = data_dir / "chroma_db"
     models_dir: Path = data_dir / "models"
     
-    # ChromaDB
     chroma_collection_name: str = "knowledge_base"
     
-    # =========================
-    # Provider Configuration
-    # =========================
-    
-    # Embedding Provider: "local" (sentence-transformers) or "openai"
     embedding_provider: Literal["local", "openai"] = "local"
-    
-    # LLM Provider: "local" (llama.cpp), "openai", or "gemini"
     llm_provider: Literal["local", "openai", "gemini"] = "local"
     
-    # =========================
-    # Local Embeddings (sentence-transformers)
-    # =========================================
+    @field_validator('embedding_provider', 'llm_provider', mode='before')
+    @classmethod
+    def normalize_provider(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+    
     local_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     local_embedding_dimension: int = 384
     
-    # =========================
-    # OpenAI Configuration
-    # =========================
     openai_api_key: Optional[str] = None
-    
-    # OpenAI Embedding Models:
-    # - text-embedding-ada-002: 1536 dims, older but reliable
-    # - text-embedding-3-small: 1536 dims, better quality, cheaper
-    # - text-embedding-3-large: 3072 dims, best quality, more expensive
-    openai_embedding_model: str = "text-embedding-3-large"
-    
-    # Auto-detect dimension based on model (will override this)
-    openai_embedding_dimension: int = 3072
-    
-    # OpenAI Chat Models:
-    # - gpt-5.2-pro: Latest flagship (Dec 2025)
-    # - gpt-5.2: Standard high-intelligence
-    # - gpt-4o: Previous generation optimized
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimension: int = 1536
     openai_chat_model: str = "gpt-5.2-pro"
     
-    # =========================
-    # Local LLM (llama.cpp)
-    # =========================
-    llm_model_path: Optional[str] = None  # Path to GGUF model file
+    llm_model_path: Optional[str] = None
     llm_context_length: int = 4096
     llm_max_tokens: int = 1024
     llm_temperature: float = 0.7
-    llm_gpu_layers: int = 0  # Set > 0 for GPU acceleration
+    llm_gpu_layers: int = 0
     
-    # =========================
-    # Google API Configuration
-    # =========================
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
     google_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
-    
-    # Google Gemini API Key (for LLM)
-    # Get at: https://aistudio.google.com/app/apikey
     google_gemini_api_key: Optional[str] = None
-    
-    # Gemini Models:
-    # - gemini-3-pro-preview: Latest Gemini 3 Pro (Preview)
-    # - gemini-2.0-flash: Fast and efficient
     google_gemini_model: str = "gemini-3-pro-preview"
     
     # =========================
@@ -113,34 +73,21 @@ class Settings(BaseSettings):
     
     @property
     def embedding_dimension(self) -> int:
-        """
-        Get embedding dimension based on selected provider and model.
-        
-        Auto-detects dimension for OpenAI models:
-        - text-embedding-ada-002: 1536
-        - text-embedding-3-small: 1536
-        - text-embedding-3-large: 3072
-        """
         if self.embedding_provider == "openai":
-            # Auto-detect dimension based on model name
             model = self.openai_embedding_model.lower()
             if "3-large" in model:
                 return 3072
             elif "3-small" in model or "ada-002" in model:
                 return 1536
-            else:
-                # Fallback to configured value
-                return self.openai_embedding_dimension
+            return self.openai_embedding_dimension
         return self.local_embedding_dimension
     
     def setup_directories(self) -> None:
-        """Create necessary directories if they don't exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.documents_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_dir.mkdir(parents=True, exist_ok=True)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
 
-# Global settings instance
 settings = Settings()
 

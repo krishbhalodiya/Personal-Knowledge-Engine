@@ -15,7 +15,13 @@ const client = axios.create({
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    // Only log non-connection errors to avoid console spam
+    if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+      // Backend is not running - this is expected if backend hasn't started yet
+      console.warn('Backend not available. Please start the backend server on port 8000.');
+    } else {
+      console.error('API Error:', error.response?.data || error.message);
+    }
     return Promise.reject(error);
   }
 );

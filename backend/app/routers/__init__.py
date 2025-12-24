@@ -7,6 +7,7 @@ from .settings import router as settings_router
 from .google_auth import router as google_auth_router
 from .gmail import router as gmail_router
 from .drive import router as drive_router
+from .folders import router as folders_router
 
 __all__ = [
     "documents_router",
@@ -16,5 +17,6 @@ __all__ = [
     "google_auth_router",
     "gmail_router",
     "drive_router",
+    "folders_router",
 ]
 

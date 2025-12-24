@@ -114,7 +114,7 @@ LLM_PROVIDER=local              # local | openai
 # =========================
 OPENAI_API_KEY=sk-...
 OPENAI_EMBEDDING_MODEL=text-embedding-3-large
-OPENAI_CHAT_MODEL=gpt-5.2-pro
+OPENAI_CHAT_MODEL=gpt-4o
 
 # =========================
 # Google APIs (for Gmail/Drive + Gemini)
@@ -122,7 +122,7 @@ OPENAI_CHAT_MODEL=gpt-5.2-pro
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_GEMINI_API_KEY=...
-GOOGLE_GEMINI_MODEL=gemini-3-pro-preview
+GOOGLE_GEMINI_MODEL=gemini-1.5-flash
 
 # =========================
 # Local LLM (if using local)
@@ -146,7 +146,7 @@ SEARCH_TOP_K=5
 EMBEDDING_PROVIDER=openai
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-key
-OPENAI_CHAT_MODEL=gpt-5.2-pro
+OPENAI_CHAT_MODEL=gpt-4o
 OPENAI_EMBEDDING_MODEL=text-embedding-3-large
 ```
 
@@ -156,7 +156,7 @@ EMBEDDING_PROVIDER=openai # or local
 LLM_PROVIDER=gemini
 OPENAI_API_KEY=sk-...
 GOOGLE_GEMINI_API_KEY=AIza...
-GOOGLE_GEMINI_MODEL=gemini-3-pro-preview
+GOOGLE_GEMINI_MODEL=gemini-1.5-flash
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 ```

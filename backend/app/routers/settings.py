@@ -1,66 +1,25 @@
-"""
-Settings API Routes - View and manage configuration.
-
-ENDPOINTS:
-==========
-GET  /api/settings              - Get current settings
-GET  /api/settings/providers    - Get available provider information
-POST /api/settings/test-embedding - Test embedding generation
-
-
-1. VISIBILITY: Users can see which provider is active
-2. DEBUGGING: Check if embeddings are working
-3. FRONTEND: Settings UI can read current config
-4. MONITORING: Track embedding costs and performance
-
-NOTE ON CHANGING SETTINGS:
-==========================
-
-Changing embedding provider at runtime is DANGEROUS because:
-- Existing documents have embeddings with dimension X
-- New provider might have dimension Y
-- Search will fail if dimensions don't match
-
-To change providers, you should:
-1. Stop the server
-2. Delete the ChromaDB data
-3. Update the .env file
-4. Restart and re-index all documents
-
-This API lets you VIEW settings, not CHANGE them (for safety).
-"""
-
 import logging
 import time
-from typing import Optional
-
-from fastapi import APIRouter, HTTPException, Query
+from typing import Optional, Literal
+from fastapi import APIRouter, HTTPException, Query, Body
 from pydantic import BaseModel
-
 from ..config import settings
 from ..services.embeddings import get_embedding_provider, get_provider_info as get_emb_info
 from ..services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-# =============================================================================
-# RESPONSE MODELS
-# =============================================================================
-
 class ProviderInfo(BaseModel):
-    """Information about an embedding provider."""
     name: str
-    type: str  # "local" or "openai"
+    type: str
     model: str
     dimension: int
     description: str
 
 
 class CurrentSettings(BaseModel):
-    """Current application settings."""
     embedding_provider: str
     embedding_model: str
     embedding_dimension: int
@@ -71,44 +30,17 @@ class CurrentSettings(BaseModel):
 
 
 class EmbeddingTestResult(BaseModel):
-    """Result of an embedding test."""
     success: bool
     provider: str
     model: str
     dimension: int
     time_ms: float
-    sample_values: list[float]  # First few values of the embedding
+    sample_values: list[float]
     error: Optional[str] = None
 
 
-# =============================================================================
-# ENDPOINTS
-# =============================================================================
-
 @router.get("", response_model=CurrentSettings)
 async def get_settings():
-    """
-    Get current application settings.
-    
-    Returns the active configuration including:
-    - Embedding provider (local or openai)
-    - Model names
-    - Chunking parameters
-    - Search settings
-    
-    EXAMPLE RESPONSE:
-    ```json
-    {
-        "embedding_provider": "local",
-        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-        "embedding_dimension": 384,
-        "llm_provider": "local",
-        "chunk_size": 512,
-        "chunk_overlap": 50,
-        "search_top_k": 5
-    }
-    ```
-    """
     return CurrentSettings(
         embedding_provider=settings.embedding_provider,
         embedding_model=(
@@ -126,13 +58,17 @@ async def get_settings():
 
 @router.get("/providers")
 async def get_providers():
-    """
-    Get information about available embedding and LLM providers.
-    """
-    # Get current embedding provider info
     emb_info = get_emb_info()
     
-    # Embedding Providers
+    embedding_models = {
+        "text-embedding-3-small": {"dimension": 1536, "cost": "cheap"},
+        "text-embedding-3-large": {"dimension": 3072, "cost": "expensive"},
+        "text-embedding-ada-002": {"dimension": 1536, "cost": "cheap"},
+    }
+    
+    current_model = settings.openai_embedding_model
+    current_dim = embedding_models.get(current_model, {}).get("dimension", 1536)
+    
     embedding_providers = {
         "local": {
             "name": "Local (sentence-transformers)",
@@ -144,13 +80,14 @@ async def get_providers():
         "openai": {
             "name": "OpenAI",
             "type": "openai",
-            "model": settings.openai_embedding_model,
-            "dimension": settings.openai_embedding_dimension,
+            "model": current_model,
+            "dimension": current_dim,
             "status": (
                 "active" if settings.embedding_provider == "openai"
                 else "api_key_missing" if not settings.openai_api_key
                 else "available"
             ),
+            "available_models": embedding_models,
         },
     }
     
@@ -201,50 +138,41 @@ async def get_providers():
     }
 
 
+@router.post("/embedding/model/switch")
+async def switch_embedding_model(
+    model: Literal["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"] = Body(..., embed=True),
+):
+    if settings.embedding_provider != "openai":
+        raise HTTPException(status_code=400, detail="Can only switch models when using OpenAI provider")
+    
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=400, detail="OpenAI API key not configured")
+    
+    object.__setattr__(settings, 'openai_embedding_model', model)
+    
+    if "3-large" in model:
+        object.__setattr__(settings, 'openai_embedding_dimension', 3072)
+    else:
+        object.__setattr__(settings, 'openai_embedding_dimension', 1536)
+    
+    logger.info(f"Switched embedding model to {model}")
+    
+    return {
+        "message": f"Embedding model switched to {model}",
+        "model": model,
+        "dimension": settings.openai_embedding_dimension,
+        "warning": "⚠️ Changing embedding models requires re-indexing all documents!"
+    }
+
+
 @router.post("/test-embedding", response_model=EmbeddingTestResult)
 async def test_embedding(
-    text: str = Query(
-        "Hello, this is a test of the embedding system.",
-        description="Text to embed for testing",
-    ),
+    text: str = Query("Hello, this is a test of the embedding system.", description="Text to embed for testing"),
 ):
-    """
-    Test the embedding provider with a sample text.
-    
-    This endpoint:
-    1. Gets the current embedding provider
-    2. Generates an embedding for the test text
-    3. Returns timing and dimension info
-    
-    Useful for:
-    - Verifying the provider is working
-    - Checking embedding dimensions
-    - Measuring latency
-    
-    EXAMPLE:
-    ```bash
-    curl -X POST "http://localhost:8000/api/settings/test-embedding?text=Hello%20world"
-    ```
-    
-    RESPONSE:
-    ```json
-    {
-        "success": true,
-        "provider": "local",
-        "model": "all-MiniLM-L6-v2",
-        "dimension": 384,
-        "time_ms": 15.3,
-        "sample_values": [0.0234, -0.0567, 0.0891, ...]
-    }
-    ```
-    """
     logger.info(f"Testing embedding with text: {text[:50]}...")
     
     try:
-        # Get the provider
         provider = get_embedding_provider()
-        
-        # Time the embedding
         start_time = time.time()
         embedding = provider.embed(text)
         elapsed_ms = (time.time() - start_time) * 1000
@@ -255,9 +183,8 @@ async def test_embedding(
             model=provider.model_name,
             dimension=len(embedding),
             time_ms=round(elapsed_ms, 2),
-            sample_values=embedding[:10],  # First 10 values
+            sample_values=embedding[:10],
         )
-        
     except Exception as e:
         logger.error(f"Embedding test failed: {e}")
         return EmbeddingTestResult(
@@ -271,23 +198,66 @@ async def test_embedding(
         )
 
 
+class SwitchLLMRequest(BaseModel):
+    provider: str
+
+
+class SwitchLLMResponse(BaseModel):
+    success: bool
+    previous_provider: str
+    current_provider: str
+    model: str
+    message: str
+
+
+@router.post("/llm/switch", response_model=SwitchLLMResponse)
+async def switch_llm_provider(request: SwitchLLMRequest):
+    from ..services.llm import get_llm_provider
+    import app.services.llm as llm_module
+    
+    valid_providers = ["local", "openai", "gemini"]
+    if request.provider not in valid_providers:
+        raise HTTPException(status_code=400, detail=f"Invalid provider. Must be one of: {valid_providers}")
+    
+    previous_provider = settings.llm_provider
+    
+    if request.provider == "openai" and not settings.openai_api_key:
+        raise HTTPException(status_code=400, detail="OpenAI API key not configured")
+    if request.provider == "gemini" and not settings.google_gemini_api_key:
+        raise HTTPException(status_code=400, detail="Gemini API key not configured")
+    if request.provider == "local" and not settings.llm_model_path:
+        raise HTTPException(status_code=400, detail="Local LLM model not configured")
+    
+    try:
+        llm_module._llm_provider = None
+        object.__setattr__(settings, 'llm_provider', request.provider)
+        new_provider = get_llm_provider(request.provider)
+        
+        logger.info(f"Switched LLM provider from {previous_provider} to {request.provider}")
+        
+        return SwitchLLMResponse(
+            success=True,
+            previous_provider=previous_provider,
+            current_provider=request.provider,
+            model=new_provider.model_name,
+            message=f"Successfully switched to {request.provider}"
+        )
+    except Exception as e:
+        object.__setattr__(settings, 'llm_provider', previous_provider)
+        llm_module._llm_provider = None
+        get_llm_provider(previous_provider)
+        logger.error(f"Failed to switch LLM provider: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/health")
 async def settings_health():
-    """
-    Quick health check for the settings/provider system.
-    
-    Returns status of:
-    - Embedding provider
-    - OpenAI API key (if configured)
-    - Model availability
-    """
     health = {
         "status": "healthy",
         "embedding_provider": settings.embedding_provider,
         "openai_configured": bool(settings.openai_api_key),
     }
     
-    # Try to verify provider is working
     try:
         provider = get_embedding_provider()
         health["provider_loaded"] = True

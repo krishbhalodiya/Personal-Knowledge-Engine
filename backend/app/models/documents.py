@@ -12,6 +12,7 @@ class DocumentType(str, Enum):
     PDF = "pdf"
     TXT = "txt"
     DOCX = "docx"
+    IMAGE = "image"  # For OCR-processed images
 
 
 class DocumentChunk(BaseModel):
