@@ -24,17 +24,28 @@ A hybrid personal knowledge engine with **configurable local/cloud processing**.
 │  ┌─────────────────┐         ┌─────────────────────────┐   │
 │  │ Embeddings      │         │ LLM                     │   │
 │  │ • MiniLM (local)│         │ • llama.cpp (local)     │   │
-│  │ • OpenAI Ada    │         │ • GPT-4 (cloud)         │   │
+│  │ • OpenAI Ada    │         │ • GPT-5 (cloud)         │   │
 │  └─────────────────┘         └─────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+## Project Roadmap
+
+- [x] **Phase 1: Backend Setup** (FastAPI, Project Structure)
+- [x] **Phase 2: Document Processing** (Parsers, Chunking, Ingestion)
+- [x] **Phase 3: Embeddings** (Local/OpenAI abstraction)
+- [x] **Phase 4: Search Engine** (Semantic + Hybrid Search)
+- [x] **Phase 5: LLM Integration** (RAG Pipeline, Streaming Chat)
+- [x] **Phase 6: Google Integration** (OAuth, Gmail & Drive Sync)
+- [ ] **Phase 7: Frontend Interface** (React, Search UI, Chat UI)
+- [ ] **Phase 8: Polish & Deployment** (Docker, Final Testing)
 
 ## Tech Stack
 
 | Component | Local Option | Cloud Option |
 |-----------|--------------|--------------|
 | Embeddings | sentence-transformers (MiniLM) | OpenAI text-embedding-3-large (3072 dim) |
-| LLM | llama.cpp (Mistral-7B) | OpenAI GPT-5.2 Pro / Gemini 2.0 Flash |
+| LLM | llama.cpp (Mistral-7B) | OpenAI GPT-5.2 Pro / Gemini 3.0 Pro Preview |
 | Vector Store | ChromaDB | ChromaDB |
 | Backend | Python 3.11+, FastAPI | - |
 | Frontend | React, TypeScript, TailwindCSS | - |
@@ -102,12 +113,16 @@ LLM_PROVIDER=local              # local | openai
 # OpenAI (if using cloud)
 # =========================
 OPENAI_API_KEY=sk-...
+OPENAI_EMBEDDING_MODEL=text-embedding-3-large
+OPENAI_CHAT_MODEL=gpt-5.2-pro
 
 # =========================
-# Google APIs (for Gmail/Drive)
+# Google APIs (for Gmail/Drive + Gemini)
 # =========================
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
+GOOGLE_GEMINI_API_KEY=...
+GOOGLE_GEMINI_MODEL=gemini-3-pro-preview
 
 # =========================
 # Local LLM (if using local)
@@ -126,25 +141,31 @@ SEARCH_TOP_K=5
 
 ### Quick Start Options
 
-**Option 1: Cloud (Easiest, Best Quality)**
+**Option 1: Unlimited Power (Best Quality)**
 ```env
 EMBEDDING_PROVIDER=openai
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-key
+OPENAI_CHAT_MODEL=gpt-5.2-pro
+OPENAI_EMBEDDING_MODEL=text-embedding-3-large
 ```
 
-**Option 2: Local (Privacy, No API Costs)**
+**Option 2: Google Ecosystem (Gemini 3.0 + Gmail/Drive)**
+```env
+EMBEDDING_PROVIDER=openai # or local
+LLM_PROVIDER=gemini
+OPENAI_API_KEY=sk-...
+GOOGLE_GEMINI_API_KEY=AIza...
+GOOGLE_GEMINI_MODEL=gemini-3-pro-preview
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+**Option 3: Local Privacy (No API Costs)**
 ```env
 EMBEDDING_PROVIDER=local
 LLM_PROVIDER=local
 LLM_MODEL_PATH=./data/models/mistral-7b.gguf
-```
-
-**Option 3: Hybrid (Local embeddings, Cloud LLM)**
-```env
-EMBEDDING_PROVIDER=local
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-your-key
 ```
 
 ## API Endpoints

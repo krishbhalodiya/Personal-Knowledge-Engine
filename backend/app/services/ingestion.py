@@ -38,12 +38,6 @@ Step 5: STORE
 - Store metadata (document ID, chunk index, etc.)
 - Enable similarity search
 
-WHY SEPARATE SERVICE?
-=====================
-1. Single Responsibility: Router handles HTTP, service handles logic
-2. Testability: Service can be tested without HTTP layer
-3. Reusability: Can be called from different routes or scripts
-4. Transaction boundary: Can handle rollback if any step fails
 """
 
 import logging

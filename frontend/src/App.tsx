@@ -11,11 +11,11 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<SearchPage />} />
+          <Route index element={<Navigate to="/search" replace />} />
+          <Route path="search" element={<SearchPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

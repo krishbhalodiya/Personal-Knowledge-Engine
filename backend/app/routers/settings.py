@@ -7,8 +7,6 @@ GET  /api/settings              - Get current settings
 GET  /api/settings/providers    - Get available provider information
 POST /api/settings/test-embedding - Test embedding generation
 
-WHY A SETTINGS API?
-===================
 
 1. VISIBILITY: Users can see which provider is active
 2. DEBUGGING: Check if embeddings are working
