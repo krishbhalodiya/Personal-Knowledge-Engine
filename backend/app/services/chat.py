@@ -21,16 +21,27 @@ class ChatService:
         self.llm_provider = get_llm_provider()
     
     async def chat(self, request: ChatRequest) -> ChatResponse:
-        search_results = await self.search_service.hybrid_search(
-            query=request.message,
-            top_k=request.top_k_context,
-        )
+        try:
+            search_results = await self.search_service.hybrid_search(
+                query=request.message,
+                top_k=request.top_k_context,
+            )
+        except Exception as e:
+            logger.error(f"Search failed: {e}", exc_info=True)
+            raise
         
         system_prompt = self._build_system_prompt(search_results.results)
         messages = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_prompt),
-            ChatMessage(role=MessageRole.USER, content=request.message)
         ]
+        
+        # Add conversation history if provided
+        if request.history:
+            for hist_msg in request.history[-10:]:  # Last 10 messages for context
+                messages.append(hist_msg)
+        
+        # Add current user message
+        messages.append(ChatMessage(role=MessageRole.USER, content=request.message))
         
         response_text = await self.llm_provider.chat(messages)
         
@@ -62,8 +73,15 @@ class ChatService:
         system_prompt = self._build_system_prompt(search_results.results)
         messages = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_prompt),
-            ChatMessage(role=MessageRole.USER, content=request.message)
         ]
+        
+        # Add conversation history if provided
+        if request.history:
+            for hist_msg in request.history[-10:]:  # Last 10 messages for context
+                messages.append(hist_msg)
+        
+        # Add current user message
+        messages.append(ChatMessage(role=MessageRole.USER, content=request.message))
         
         async for chunk in self.llm_provider.chat_stream(messages):
             yield chunk
@@ -71,19 +89,26 @@ class ChatService:
     def _build_system_prompt(self, results: List[Any]) -> str:
         context_str = ""
         for i, res in enumerate(results):
-            context_str += f"\n--- Source {i+1} ({res.filename}) ---\n{res.content}\n"
+            context_str += f"\n--- Source {i+1}: {res.filename} ---\n{res.content}\n"
             
-        return f"""You are a helpful AI assistant for a personal knowledge engine.
-Your goal is to answer the user's question accurately using ONLY the provided context.
+        return f"""You are a personal AI assistant for a knowledge management system. Your name is PK Assistant.
 
-Rules:
-1. Use the provided context to answer.
-2. If the answer is not in the context, say "I cannot answer this based on the available documents."
-3. Cite your sources implicitly (e.g., "According to the document...").
-4. Be concise and direct.
+YOUR PURPOSE:
+You help users search, understand, and query their personal documents, emails, notes, and files.
+You have access to the user's indexed documents and will answer questions based on this knowledge base.
 
-Context:{context_str}
-"""
+INSTRUCTIONS:
+1. Answer questions using ONLY the provided context from the user's documents
+2. When you use information from a source, mention which document it came from (e.g., "According to your email from...", "In your notes about...")
+3. If multiple sources contain relevant information, synthesize them into a coherent answer
+4. If the context doesn't contain enough information to fully answer, say so clearly
+5. Be conversational, helpful, and direct - this is the user's personal assistant
+6. If asked about yourself, explain you're a personal knowledge assistant that helps query their documents
+
+CONTEXT FROM USER'S DOCUMENTS:
+{context_str}
+
+Remember: You're helping the user understand THEIR OWN data. Be helpful and personable."""
 
 # Singleton
 _chat_service = None

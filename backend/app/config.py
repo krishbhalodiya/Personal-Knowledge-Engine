@@ -37,9 +37,9 @@ class Settings(BaseSettings):
     local_embedding_dimension: int = 384
     
     openai_api_key: Optional[str] = None
-    openai_embedding_model: str = "text-embedding-3-small"
-    openai_embedding_dimension: int = 1536
-    openai_chat_model: str = "gpt-5.2-pro"
+    openai_embedding_model: str = "text-embedding-3-large"
+    openai_embedding_dimension: int = 3072
+    openai_chat_model: str = "gpt-4o"
     
     llm_model_path: Optional[str] = None
     llm_context_length: int = 4096

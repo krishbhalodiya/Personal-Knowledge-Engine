@@ -148,20 +148,49 @@ async def switch_embedding_model(
     if not settings.openai_api_key:
         raise HTTPException(status_code=400, detail="OpenAI API key not configured")
     
+    # Calculate new dimension
+    new_dimension = 3072 if "3-large" in model else 1536
+    
+    # Safety check: Verify dimension matches existing collection
+    from ..services.vector_store import get_vector_store
+    collection_count = 0
+    try:
+        vector_store = get_vector_store()
+        collection_dim = vector_store.get_collection_dimension()
+        collection_count = vector_store.count()
+        
+        if collection_dim and collection_count > 0:
+            if collection_dim != new_dimension:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"⚠️ CANNOT switch embedding model: Dimension mismatch!\n\n"
+                        f"Current collection uses {collection_dim}-dimensional embeddings ({collection_count} documents indexed).\n"
+                        f"New model '{model}' uses {new_dimension}-dimensional embeddings.\n\n"
+                        f"This mismatch will break all search and indexing operations!\n\n"
+                        f"To switch models:\n"
+                        f"1. Reset the knowledge base first: DELETE /api/documents/reset\n"
+                        f"2. Then switch to the new model\n"
+                        f"3. Re-index all documents\n\n"
+                        f"⚠️ DO NOT proceed without resetting - it will break everything!"
+                    )
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # If collection doesn't exist or is empty, it's safe to switch
+        logger.debug(f"Collection check failed (may be empty): {e}")
+    
     object.__setattr__(settings, 'openai_embedding_model', model)
+    object.__setattr__(settings, 'openai_embedding_dimension', new_dimension)
     
-    if "3-large" in model:
-        object.__setattr__(settings, 'openai_embedding_dimension', 3072)
-    else:
-        object.__setattr__(settings, 'openai_embedding_dimension', 1536)
-    
-    logger.info(f"Switched embedding model to {model}")
+    logger.info(f"Switched embedding model to {model} (dimension: {new_dimension})")
     
     return {
         "message": f"Embedding model switched to {model}",
         "model": model,
-        "dimension": settings.openai_embedding_dimension,
-        "warning": "⚠️ Changing embedding models requires re-indexing all documents!"
+        "dimension": new_dimension,
+        "warning": "⚠️ Changing embedding models requires re-indexing all documents!" if collection_count > 0 else None
     }
 
 
@@ -198,6 +227,19 @@ async def test_embedding(
         )
 
 
+class SwitchEmbeddingRequest(BaseModel):
+    provider: str
+
+
+class SwitchEmbeddingResponse(BaseModel):
+    success: bool
+    previous_provider: str
+    current_provider: str
+    dimension: int
+    message: str
+    warning: Optional[str] = None
+
+
 class SwitchLLMRequest(BaseModel):
     provider: str
 
@@ -208,6 +250,91 @@ class SwitchLLMResponse(BaseModel):
     current_provider: str
     model: str
     message: str
+
+
+@router.post("/embedding/switch", response_model=SwitchEmbeddingResponse)
+async def switch_embedding_provider(request: SwitchEmbeddingRequest):
+    """Switch embedding provider (local <-> openai) with dimension safety checks."""
+    from ..services.embeddings import get_embedding_provider, reset_provider
+    from ..services.vector_store import get_vector_store
+    import app.services.embeddings as emb_module
+    
+    valid_providers = ["local", "openai"]
+    if request.provider not in valid_providers:
+        raise HTTPException(status_code=400, detail=f"Invalid provider. Must be one of: {valid_providers}")
+    
+    if request.provider == settings.embedding_provider:
+        raise HTTPException(status_code=400, detail=f"Already using {request.provider} provider")
+    
+    if request.provider == "openai" and not settings.openai_api_key:
+        raise HTTPException(status_code=400, detail="OpenAI API key not configured")
+    
+    previous_provider = settings.embedding_provider
+    
+    # Calculate new dimension
+    if request.provider == "local":
+        new_dimension = settings.local_embedding_dimension
+    else:  # openai
+        model = settings.openai_embedding_model.lower()
+        new_dimension = 3072 if "3-large" in model else 1536
+    
+    # Safety check: Verify dimension matches existing collection
+    try:
+        vector_store = get_vector_store()
+        collection_dim = vector_store.get_collection_dimension()
+        collection_count = vector_store.count()
+        
+        if collection_dim and collection_count > 0:
+            if collection_dim != new_dimension:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"⚠️ CANNOT switch embedding provider: Dimension mismatch!\n\n"
+                        f"Current collection uses {collection_dim}-dimensional embeddings ({collection_count} documents indexed).\n"
+                        f"New provider '{request.provider}' uses {new_dimension}-dimensional embeddings.\n\n"
+                        f"This mismatch will break all search and indexing operations!\n\n"
+                        f"To switch providers:\n"
+                        f"1. Reset the knowledge base first: DELETE /api/documents/reset\n"
+                        f"2. Then switch to the new provider\n"
+                        f"3. Re-index all documents\n\n"
+                        f"⚠️ DO NOT proceed without resetting - it will break everything!"
+                    )
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.debug(f"Collection check failed (may be empty): {e}")
+    
+    try:
+        # Reset the cached provider
+        reset_provider()
+        emb_module._embedding_provider = None
+        
+        # Switch provider
+        object.__setattr__(settings, 'embedding_provider', request.provider)
+        new_provider = get_embedding_provider(request.provider)
+        
+        logger.info(f"Switched embedding provider from {previous_provider} to {request.provider} (dimension: {new_dimension})")
+        
+        warning = None
+        if collection_count > 0:
+            warning = "⚠️ Changing embedding providers requires re-indexing all documents!"
+        
+        return SwitchEmbeddingResponse(
+            success=True,
+            previous_provider=previous_provider,
+            current_provider=request.provider,
+            dimension=new_dimension,
+            message=f"Successfully switched to {request.provider}",
+            warning=warning
+        )
+    except Exception as e:
+        # Rollback on error
+        object.__setattr__(settings, 'embedding_provider', previous_provider)
+        reset_provider()
+        get_embedding_provider(previous_provider)
+        logger.error(f"Failed to switch embedding provider: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/llm/switch", response_model=SwitchLLMResponse)

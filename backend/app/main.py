@@ -24,21 +24,21 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler for startup/shutdown events."""
-    # Startup
     logger.info(f"Starting {settings.app_name}...")
     
-    # Setup directories
     settings.setup_directories()
     logger.info(f"Data directory: {settings.data_dir}")
     
-    # Initialize vector store
-    vector_store = get_vector_store()
-    logger.info(f"Vector store initialized with {vector_store.count()} documents")
+    try:
+        vector_store = get_vector_store()
+        count = vector_store.count()
+        logger.info(f"Vector store initialized with {count} documents")
+    except Exception as e:
+        logger.error(f"Vector store initialization failed: {e}", exc_info=True)
+        raise
     
     yield
     
-    # Shutdown
     logger.info("Shutting down...")
 
 

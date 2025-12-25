@@ -59,37 +59,6 @@ async def upload_document(
     title: Optional[str] = Form(None, description="Optional document title"),
     ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
-    """
-    Upload and index a new document.
-    
-    SUPPORTED FORMATS:
-    - PDF (.pdf)
-    - Word Documents (.docx, .doc)
-    - Markdown (.md, .markdown)
-    - Plain Text (.txt, .text)
-    
-    PROCESS:
-    1. Validate file type and size
-    2. Read file content
-    3. Parse document to extract text
-    4. Chunk text into smaller pieces
-    5. Store in vector database
-    
-    RESPONSE:
-    Returns document metadata including:
-    - id: Unique document identifier
-    - filename: Original filename
-    - title: Extracted or provided title
-    - doc_type: Detected document type
-    - chunk_count: Number of chunks created
-    
-    EXAMPLE:
-    ```bash
-    curl -X POST "http://localhost:8000/api/documents/upload" \\
-         -F "file=@document.pdf" \\
-         -F "title=My Document"
-    ```
-    """
     logger.info(f"Upload request received: {file.filename}")
     
     # =========================================================================
@@ -149,11 +118,9 @@ async def upload_document(
             title=title,
         )
     except ValueError as e:
-        # Validation errors (unsupported type, no text, etc.)
         logger.warning(f"Document validation failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        # Unexpected errors
         logger.error(f"Document ingestion failed: {e}")
         raise HTTPException(
             status_code=500,
@@ -175,6 +142,40 @@ async def upload_document(
         created_at=document.created_at,
         message=f"Document uploaded successfully. Created {document.chunk_count} searchable chunks."
     )
+
+
+@router.delete("/reset")
+async def reset_all_documents(
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """
+    Reset the entire knowledge base.
+    
+    WARNING: This will delete ALL indexed documents, chunks, and files!
+    This operation cannot be undone.
+    
+    Use this when:
+    - Switching embedding providers with different dimensions
+    - Starting fresh with a new configuration
+    - Clearing corrupted data
+    
+    EXAMPLE:
+    ```bash
+    curl -X DELETE "http://localhost:8000/api/documents/reset"
+    ```
+    """
+    try:
+        deleted_count = await ingestion_service.reset_all()
+        return {
+            "message": f"Successfully reset knowledge base. Deleted {deleted_count} documents.",
+            "documents_deleted": deleted_count,
+        }
+    except Exception as e:
+        logger.error(f"Reset failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reset knowledge base: {str(e)}"
+        )
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -441,28 +442,33 @@ async def view_document(
     View the document content inline (not as download).
     
     Returns the document content for display in the UI.
+    For images, returns a URL to the original file.
     """
-    # Check if document exists
     document = ingestion_service.get_document(document_id)
     if document is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Document not found: {document_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"Document not found: {document_id}")
     
-    # Get the content
     content = document.content or ""
+    original_file_url = None
+    is_image = False
     
-    # Try to read from stored file if content is empty
-    if not content:
-        # Look for the file in documents directory
-        for file_path in settings.documents_dir.glob(f"*{document_id}*"):
-            if file_path.is_file():
+    # Check if it's an image type
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp'}
+    filename_lower = document.filename.lower()
+    is_image = any(filename_lower.endswith(ext) for ext in image_extensions)
+    
+    # Find the stored original file
+    for file_path in settings.documents_dir.glob(f"*{document_id}*"):
+        if file_path.is_file():
+            # If image, provide URL to original file endpoint
+            if is_image:
+                original_file_url = f"/api/documents/{document_id}/original"
+            elif not content:
                 try:
                     content = file_path.read_text(encoding='utf-8')
-                    break
                 except Exception:
                     pass
+            break
     
     return {
         "document_id": document_id,
@@ -471,4 +477,45 @@ async def view_document(
         "doc_type": document.doc_type.value,
         "content": content,
         "metadata": document.metadata,
+        "is_image": is_image,
+        "original_file_url": original_file_url,
     }
+
+
+@router.get("/{document_id}/original")
+async def get_original_file(
+    document_id: str,
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """
+    Get the original file (for images, PDFs, etc).
+    """
+    import mimetypes
+    
+    document = ingestion_service.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail=f"Document not found: {document_id}")
+    
+    # Find the stored file
+    file_path = None
+    for fp in settings.documents_dir.glob(f"*{document_id}*"):
+        if fp.is_file() and not fp.name.endswith('.json'):
+            file_path = fp
+            break
+    
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Original file not found")
+    
+    # Determine content type
+    content_type, _ = mimetypes.guess_type(document.filename)
+    if not content_type:
+        content_type = "application/octet-stream"
+    
+    # Read and return file
+    file_content = file_path.read_bytes()
+    
+    return Response(
+        content=file_content,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{document.filename}"'}
+    )

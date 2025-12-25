@@ -41,6 +41,7 @@ Step 5: STORE
 """
 
 import logging
+import json
 import uuid
 import hashlib
 from datetime import datetime
@@ -89,17 +90,64 @@ class IngestionService:
     """
     
     def __init__(self, vector_store: Optional[VectorStoreService] = None):
-        """
-        Initialize the ingestion service.
+        try:
+            self.vector_store = vector_store or get_vector_store()
+        except Exception as e:
+            logger.error(f"IngestionService initialization failed: {e}", exc_info=True)
+            raise
         
-        Args:
-            vector_store: Vector store service (default: singleton instance)
-        """
-        self.vector_store = vector_store or get_vector_store()
+        # Registry path
+        self.registry_path = settings.data_dir / "document_registry.json"
         
-        # Document storage tracking (in-memory for now)
-        # In production, this would be a database
+        # Document storage tracking
         self._documents: Dict[str, Document] = {}
+        
+        # Load registry from disk
+        self._load_registry()
+    
+    def _load_registry(self):
+        """Load document registry from disk."""
+        if self.registry_path.exists():
+            try:
+                data = json.loads(self.registry_path.read_text(encoding='utf-8'))
+                for doc_data in data.values():
+                    # Convert strings back to datetime
+                    if "created_at" in doc_data:
+                        doc_data["created_at"] = datetime.fromisoformat(doc_data["created_at"])
+                    if "updated_at" in doc_data:
+                        doc_data["updated_at"] = datetime.fromisoformat(doc_data["updated_at"])
+                    # Convert doc_type string to enum
+                    if "doc_type" in doc_data:
+                        try:
+                            doc_data["doc_type"] = DocumentType(doc_data["doc_type"])
+                        except ValueError:
+                            doc_data["doc_type"] = DocumentType.TXT
+                            
+                    doc = Document(**doc_data)
+                    self._documents[doc.id] = doc
+                logger.info(f"Loaded {len(self._documents)} documents from registry")
+            except Exception as e:
+                logger.error(f"Failed to load document registry: {e}")
+                self._documents = {}
+        else:
+            logger.info("No document registry found, starting fresh")
+
+    def _save_registry(self):
+        """Save document registry to disk."""
+        try:
+            # Convert documents to dicts
+            data = {
+                doc_id: {
+                    **doc.dict(),
+                    "created_at": doc.created_at.isoformat(),
+                    "updated_at": doc.updated_at.isoformat(),
+                    "doc_type": doc.doc_type.value
+                }
+                for doc_id, doc in self._documents.items()
+            }
+            self.registry_path.write_text(json.dumps(data, indent=2), encoding='utf-8')
+        except Exception as e:
+            logger.error(f"Failed to save document registry: {e}")
     
     async def ingest_bytes(
         self,
@@ -198,6 +246,7 @@ class IngestionService:
         
         # Save document reference
         self._documents[doc_id] = document
+        self._save_registry()
         
         logger.info(f"Successfully ingested document: {doc_id}")
         return document
@@ -288,6 +337,7 @@ class IngestionService:
         
         # Save document reference
         self._documents[doc_id] = document
+        self._save_registry()
         
         logger.info(f"Successfully ingested text document: {doc_id}")
         return document
@@ -324,12 +374,74 @@ class IngestionService:
         
         # Step 3: Remove from registry
         del self._documents[doc_id]
+        self._save_registry()
         
         return True
     
     def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a document by ID."""
-        return self._documents.get(doc_id)
+        # Try memory first
+        doc = self._documents.get(doc_id)
+        if doc:
+            return doc
+            
+        # Fallback: Try to reconstruct from ChromaDB metadata
+        # This handles cases where registry is lost but ChromaDB persists
+        try:
+            results = self.vector_store.collection.get(
+                where={"document_id": doc_id},
+                limit=1,
+                include=["metadatas"]
+            )
+            if results["metadatas"] and len(results["metadatas"]) > 0:
+                meta = results["metadatas"][0]
+                
+                filename = meta.get("filename", "unknown")
+                # Try to find the file
+                file_path = None
+                for fp in settings.documents_dir.glob(f"*{doc_id}*"):
+                    if fp.is_file() and not fp.name.endswith('.json'):
+                        file_path = fp
+                        break
+                
+                # Load content from file if possible
+                content = ""
+                if file_path:
+                    try:
+                        content = file_path.read_text(encoding='utf-8', errors='ignore')
+                    except:
+                        pass
+                
+                # Reconstruct document
+                # Note: We might miss exact created_at/updated_at if not in metadata
+                # but we try our best
+                doc_type_val = meta.get("doc_type", "txt")
+                try:
+                    doc_type = DocumentType(doc_type_val)
+                except:
+                    doc_type = DocumentType.TXT
+
+                restored_doc = Document(
+                    id=doc_id,
+                    filename=filename,
+                    title=meta.get("title", filename),
+                    doc_type=doc_type,
+                    content=content,
+                    file_path=str(file_path) if file_path else None,
+                    chunk_count=1, # Approximation
+                    created_at=datetime.utcnow(), 
+                    updated_at=datetime.utcnow(),
+                    metadata=meta
+                )
+                
+                # Cache it in memory for future
+                self._documents[doc_id] = restored_doc
+                return restored_doc
+                
+        except Exception as e:
+            logger.warning(f"Failed to recover document {doc_id} from Chroma: {e}")
+            
+        return None
     
     def list_documents(
         self,
@@ -365,6 +477,34 @@ class IngestionService:
     def get_document_count(self) -> int:
         """Get total number of documents."""
         return len(self._documents)
+    
+    async def reset_all(self) -> int:
+        """
+        Reset all documents and the vector store.
+        
+        This will:
+        1. Delete all chunks from vector store
+        2. Delete all document files from disk
+        3. Clear the document registry
+        
+        Returns:
+            Number of documents deleted
+        """
+        logger.warning("Resetting all documents - this will delete everything!")
+        
+        doc_count = len(self._documents)
+        
+        # Delete all documents
+        doc_ids = list(self._documents.keys())
+        for doc_id in doc_ids:
+            await self.delete_document(doc_id)
+        
+        # Reset vector store
+        self.vector_store.reset()
+        self._save_registry()
+        
+        logger.info(f"Reset complete: {doc_count} documents deleted")
+        return doc_count
     
     # =========================================================================
     # PRIVATE METHODS
@@ -545,6 +685,24 @@ class IngestionService:
         try:
             embeddings = embedding_provider.embed_batch(documents)
             logger.info(f"Generated {len(embeddings)} embeddings ({embedding_provider.dimension} dimensions)")
+        except ValueError as e:
+            # Check if it's a quota error - try fallback to local
+            error_str = str(e)
+            if "quota" in error_str.lower() or "insufficient_quota" in error_str.lower():
+                logger.warning(f"OpenAI quota error detected during indexing, attempting fallback to local embeddings: {e}")
+                try:
+                    from ..services.embeddings import get_local_embedding_provider
+                    local_provider = get_local_embedding_provider()
+                    embeddings = local_provider.embed_batch(documents)
+                    logger.info(f"Successfully used local embeddings as fallback. Generated {len(embeddings)} embeddings ({local_provider.dimension} dimensions)")
+                    # Update the embedding provider reference for dimension check
+                    embedding_provider = local_provider
+                except Exception as fallback_error:
+                    logger.error(f"Fallback to local embeddings also failed: {fallback_error}")
+                    raise ValueError(f"Embedding generation failed. OpenAI quota exceeded and local fallback failed: {fallback_error}")
+            else:
+                logger.error(f"Failed to generate embeddings: {e}")
+                raise ValueError(f"Embedding generation failed: {e}")
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {e}")
             raise ValueError(f"Embedding generation failed: {e}")

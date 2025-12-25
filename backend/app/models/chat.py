@@ -37,8 +37,9 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User message", min_length=1)
     conversation_id: Optional[str] = Field(None, description="Conversation ID for context")
     include_sources: bool = Field(True, description="Include source citations")
-    top_k_context: int = Field(3, description="Number of context chunks to retrieve")
+    top_k_context: int = Field(5, description="Number of context chunks to retrieve", ge=1, le=10)
     stream: bool = Field(False, description="Enable streaming response")
+    history: Optional[List["ChatMessage"]] = Field(None, description="Previous messages for context")
 
 
 class ChatResponse(BaseModel):

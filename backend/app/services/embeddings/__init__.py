@@ -213,8 +213,13 @@ def get_embedding_provider(
         logger.info(f"Using local embedding provider: {_embedding_provider.model_name}")
         
     elif provider_name == "openai":
-        _embedding_provider = get_openai_embedding_provider()
-        logger.info(f"Using OpenAI embedding provider: {_embedding_provider.model_name}")
+        try:
+            _embedding_provider = get_openai_embedding_provider()
+            logger.info(f"Using OpenAI embedding provider: {_embedding_provider.model_name}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize OpenAI provider: {e}. Falling back to local embeddings.")
+            _embedding_provider = get_local_embedding_provider()
+            logger.info(f"Fell back to local embedding provider: {_embedding_provider.model_name}")
         
     else:
         raise ValueError(

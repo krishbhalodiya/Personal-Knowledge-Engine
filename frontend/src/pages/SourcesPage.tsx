@@ -163,12 +163,15 @@ export default function SourcesPage() {
       // Extract the folder name (first part of the path)
       const folderName = relativePath.split('/')[0];
       
-      // Unfortunately, browser security prevents us from getting the full system path
-      // We need to send the folder name to the backend and let it resolve the path
-      // For now, show a message with the folder name
-      setCustomPath(`~/${folderName}`);
+      // Browser security prevents getting full system paths
+      // Show modal with suggested path that user can edit
+      setCustomPath(`~/Documents/${folderName}`);
       setShowAddFolder(true);
-      setSuccess(`Selected folder: ${folderName}. Please verify the path below.`);
+      setSuccess(`Selected folder: ${folderName}. Please verify and correct the path below if needed.`);
+    } else {
+      // No relative path - just open the modal for manual entry
+      setShowAddFolder(true);
+      setSuccess('Please enter the full path to the folder you want to add.');
     }
     
     // Reset the input

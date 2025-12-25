@@ -341,6 +341,14 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             return embedding
             
         except Exception as e:
+            error_str = str(e)
+            # Check for quota/rate limit errors
+            if "429" in error_str or "quota" in error_str.lower() or "insufficient_quota" in error_str.lower():
+                logger.error(f"OpenAI quota exceeded or rate limited: {e}")
+                raise ValueError(
+                    f"OpenAI API quota exceeded. Please check your billing or switch to local embeddings. "
+                    f"Error: {error_str}"
+                )
             logger.error(f"OpenAI embedding failed: {e}")
             raise
     
@@ -417,6 +425,14 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                     time.sleep(0.1)
                     
             except Exception as e:
+                error_str = str(e)
+                # Check for quota/rate limit errors
+                if "429" in error_str or "quota" in error_str.lower() or "insufficient_quota" in error_str.lower():
+                    logger.error(f"OpenAI quota exceeded or rate limited: {e}")
+                    raise ValueError(
+                        f"OpenAI API quota exceeded. Please check your billing or switch to local embeddings. "
+                        f"Error: {error_str}"
+                    )
                 logger.error(f"OpenAI batch embedding failed at batch {i}: {e}")
                 raise
         

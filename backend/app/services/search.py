@@ -39,6 +39,39 @@ class SearchService:
         
         try:
             query_vector = self.embedding_provider.embed(query)
+        except ValueError as e:
+            # Check if it's a quota error - try fallback to local
+            error_str = str(e)
+            if "quota" in error_str.lower() or "insufficient_quota" in error_str.lower():
+                logger.warning(f"OpenAI quota error detected, checking collection dimension before fallback: {e}")
+                
+                # Check collection dimension before falling back
+                collection_dim = self.vector_store.get_collection_dimension()
+                if collection_dim and collection_dim != 384:
+                    # Collection was created with different dimension, can't use local fallback
+                    logger.error(
+                        f"Cannot fallback to local embeddings: Collection uses {collection_dim}-dimensional embeddings, "
+                        f"but local embeddings are 384-dimensional. Please switch to matching provider or reset collection."
+                    )
+                    raise ValueError(
+                        f"OpenAI quota exceeded, but cannot fallback to local embeddings: "
+                        f"Collection was created with {collection_dim}-dimensional embeddings (likely OpenAI), "
+                        f"while local embeddings are 384-dimensional. "
+                        f"To fix: Switch to OpenAI provider in Settings, or reset the collection and re-index with local embeddings."
+                    )
+                
+                # Safe to fallback - collection is empty or uses 384 dims
+                try:
+                    from .embeddings import get_local_embedding_provider
+                    local_provider = get_local_embedding_provider()
+                    query_vector = local_provider.embed(query)
+                    logger.info("Successfully used local embeddings as fallback")
+                except Exception as fallback_error:
+                    logger.error(f"Fallback to local embeddings also failed: {fallback_error}")
+                    raise ValueError(f"Embedding generation failed. OpenAI quota exceeded and local fallback failed: {fallback_error}")
+            else:
+                logger.error(f"Failed to embed query: {e}")
+                raise ValueError(f"Embedding generation failed: {e}")
         except Exception as e:
             logger.error(f"Failed to embed query: {e}")
             raise ValueError(f"Embedding generation failed: {e}")
@@ -49,6 +82,17 @@ class SearchService:
                 n_results=top_k,
                 where=filter_metadata,
             )
+        except ValueError as e:
+            # Dimension mismatch or other validation errors
+            error_str = str(e)
+            if "dimension mismatch" in error_str.lower():
+                logger.error(f"Dimension mismatch in vector search: {e}")
+                raise ValueError(
+                    f"Vector search failed due to embedding dimension mismatch. "
+                    f"The collection was created with a different embedding dimension than what you're currently using. "
+                    f"{error_str}"
+                )
+            raise
         except Exception as e:
             logger.error(f"ChromaDB query failed: {e}")
             raise ValueError(f"Vector search failed: {e}")

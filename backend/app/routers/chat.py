@@ -233,6 +233,27 @@ async def delete_conversation(conversation_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class RenameRequest(BaseModel):
+    """Request to rename a conversation."""
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+@router.patch("/conversations/{conversation_id}/rename")
+async def rename_conversation(conversation_id: str, request: RenameRequest):
+    """
+    Rename a conversation.
+    """
+    conversation = _load_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    conversation["title"] = request.title.strip()
+    conversation["updated_at"] = datetime.utcnow().isoformat()
+    _save_conversation(conversation)
+    
+    return {"success": True, "title": conversation["title"]}
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -261,39 +282,48 @@ async def chat_stream(
     
     Returns a stream of JSON lines:
     {"type": "chunk", "content": "Hello"}
-    {"type": "chunk", "content": " world"}
     {"type": "sources", "data": [...]}
-    
-    This allows the frontend to render text progressively AND show citations.
     """
     async def stream_generator():
-        # 1. Get Context (Search)
-        search_results = await chat_service.search_service.hybrid_search(
-            query=request.message,
-            top_k=request.top_k_context,
-        )
+        try:
+            search_results = await chat_service.search_service.hybrid_search(
+                query=request.message,
+                top_k=request.top_k_context,
+            )
+        except Exception as e:
+            yield json.dumps({"type": "error", "content": f"Search failed: {str(e)}"}) + "\n"
+            return
         
-        # 2. Send Sources Event
+        # Send sources first
         sources = [
             {
                 "document_id": res.document_id,
                 "filename": res.filename,
                 "chunk_id": res.chunk_id,
                 "score": res.score,
-                "preview": res.content[:100] + "..."
+                "preview": res.content[:150] + "..." if len(res.content) > 150 else res.content
             }
             for res in search_results.results
         ]
         yield json.dumps({"type": "sources", "data": sources}) + "\n"
         
-        # 3. Build Prompt & Stream Answer
+        # Build prompt with conversation history
         system_prompt = chat_service._build_system_prompt(search_results.results)
         from ..models.chat import ChatMessage, MessageRole
         
         messages = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_prompt),
-            ChatMessage(role=MessageRole.USER, content=request.message)
         ]
+        
+        # Include conversation history if provided
+        if request.history:
+            for hist_msg in request.history[-10:]:  # Last 10 messages
+                messages.append(ChatMessage(
+                    role=MessageRole(hist_msg.role) if isinstance(hist_msg.role, str) else hist_msg.role,
+                    content=hist_msg.content
+                ))
+        
+        messages.append(ChatMessage(role=MessageRole.USER, content=request.message))
         
         try:
             async for chunk in chat_service.llm_provider.chat_stream(messages):
