@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { 
   Folder, FolderPlus, RefreshCw, Trash2, Loader2, 
   Cloud, HardDrive, Check, X, AlertCircle, Eye,
-  ChevronDown, ChevronRight, FileText, Image, Code
+  ChevronDown, ChevronRight, FileText, Image, Code,
+  StopCircle
 } from 'lucide-react';
 import client from '../api/client';
 import clsx from 'clsx';
@@ -31,6 +32,18 @@ interface PreviewData {
   by_extension: Record<string, { count: number; size: number; samples: string[] }>;
 }
 
+interface ScanProgress {
+  status: 'idle' | 'running' | 'stopping' | 'stopped' | 'completed' | 'failed';
+  total_files: number;
+  processed_files: number;
+  current_file: string | null;
+  progress_percent: number;
+  files_indexed: number;
+  errors: number;
+  estimated_remaining_seconds: number | null;
+  message: string | null;
+}
+
 export default function SourcesPage() {
   const [sources, setSources] = useState<FolderSource[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -40,6 +53,10 @@ export default function SourcesPage() {
   const [scanningAll, setScanningAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  
+  // Scan Progress
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const [showScanModal, setShowScanModal] = useState(false);
   
   // Preview modal
   const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -57,6 +74,49 @@ export default function SourcesPage() {
     loadSources();
     loadSuggestions();
   }, []);
+
+  // Polling for scan status
+  useEffect(() => {
+    let interval: any;
+
+    if (scanningAll || showScanModal || scanning) {
+      // Start polling immediately
+      const pollStatus = async () => {
+        try {
+          const res = await client.get('/folders/scan/status');
+          const progress = res.data;
+          setScanProgress(progress);
+          
+          if (progress.status === 'completed' || progress.status === 'stopped' || progress.status === 'failed' || progress.status === 'idle') {
+             // If we were scanning, refresh sources to show new counts
+             if (scanningAll || scanning) {
+               loadSources();
+               if (scanningAll) setScanningAll(false);
+               if (scanning) setScanning(null);
+               setShowScanModal(false);
+               if (progress.status === 'completed') {
+                 setSuccess(`Scan completed: ${progress.files_indexed || 0} files indexed.`);
+               } else if (progress.status === 'stopped') {
+                 setError('Scan stopped by user.');
+               } else if (progress.status === 'failed') {
+                 setError(progress.message || 'Scan failed.');
+               }
+             }
+          }
+        } catch (err) {
+          console.error("Failed to poll status", err);
+        }
+      };
+      
+      // Poll immediately, then every second
+      pollStatus();
+      interval = setInterval(pollStatus, 1000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [scanningAll, showScanModal, scanning]);
 
   const loadSources = async () => {
     try {
@@ -94,18 +154,18 @@ export default function SourcesPage() {
 
   const scanFolder = async (path: string) => {
     setScanning(path);
+    setShowScanModal(true);
     setError(null);
     setSuccess(null);
     
     try {
-      const res = await client.post(`/folders/scan/${encodeURIComponent(path)}`);
-      setSuccess(`Scanned ${res.data.discovered} files: ${res.data.indexed} indexed, ${res.data.unchanged} unchanged`);
-      loadSources();
+      await client.post(`/folders/scan/${encodeURIComponent(path)}`);
+      // Scan runs in background, polling will handle updates
     } catch (err: any) {
       console.error(err);
       setError(err.response?.data?.detail || 'Scan failed');
-    } finally {
       setScanning(null);
+      setShowScanModal(false);
     }
   };
 
@@ -121,18 +181,27 @@ export default function SourcesPage() {
     }
     
     setScanningAll(true);
+    setShowScanModal(true);
     setError(null);
     setSuccess(null);
     
     try {
-      const res = await client.post('/folders/scan-all');
-      setSuccess(`Scanned ${res.data.folders_scanned} folders: ${res.data.indexed} files indexed`);
-      loadSources();
+      await client.post('/folders/scan-all');
+      // Success is handled by polling
     } catch (err: any) {
       console.error(err);
       setError(err.response?.data?.detail || 'Scan failed');
-    } finally {
       setScanningAll(false);
+      setShowScanModal(false);
+    }
+  };
+
+  const stopScan = async () => {
+    try {
+      await client.post('/folders/scan/stop');
+      // Status update will be handled by polling
+    } catch (err) {
+      console.error('Failed to stop scan:', err);
     }
   };
 
@@ -224,6 +293,12 @@ export default function SourcesPage() {
   const availableSuggestions = suggestions.filter(
     s => !sources.some(src => src.path === s.path)
   );
+
+  const formatTime = (seconds: number | null) => {
+    if (seconds === null) return 'Calculating...';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    return `${Math.ceil(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  };
 
   return (
     <div className="space-y-8">
@@ -386,11 +461,11 @@ export default function SourcesPage() {
                         }
                         scanFolder(source.path);
                       }}
-                      disabled={!source.enabled || scanning === source.path}
+                      disabled={!source.enabled || scanning === source.path || scanningAll}
                       className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
                       title="Scan folder (uses API calls - costs money)"
                     >
-                      <RefreshCw className={clsx('w-4 h-4', scanning === source.path && 'animate-spin')} />
+                      <RefreshCw className={clsx('w-4 h-4', (scanning === source.path || showScanModal) && 'animate-spin')} />
                     </button>
                     
                     {/* Toggle */}
@@ -598,7 +673,81 @@ export default function SourcesPage() {
           </div>
         </div>
       )}
+
+      {/* Scan Progress Modal */}
+      {showScanModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <RefreshCw className={clsx("w-5 h-5", scanProgress?.status === 'running' && "animate-spin text-blue-600")} />
+              Scanning Documents
+            </h3>
+            
+            {scanProgress ? (
+              <div className="space-y-4">
+                {/* Progress Bar */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>Progress ({Math.round(scanProgress.progress_percent || 0)}%)</span>
+                    <span>{scanProgress.processed_files || 0} / {scanProgress.total_files || 0} files</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-600 transition-all duration-300 ease-out"
+                      style={{ width: `${scanProgress.progress_percent || 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Current Status */}
+                <div className="bg-gray-50 p-4 rounded-xl space-y-3">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500">Current File:</span>
+                    <span className="font-mono text-gray-800 truncate max-w-[200px]" title={scanProgress.current_file || ''}>
+                      {scanProgress.current_file || 'Preparing...'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500">Indexed:</span>
+                    <span className="text-green-600 font-medium">{scanProgress.files_indexed || 0} files</span>
+                  </div>
+                  {scanProgress.estimated_remaining_seconds !== null && scanProgress.estimated_remaining_seconds !== undefined && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-500">Est. Remaining:</span>
+                      <span className="text-gray-800">{formatTime(scanProgress.estimated_remaining_seconds)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Controls */}
+                <div className="flex justify-end pt-2">
+                  {(scanProgress.status === 'completed' || scanProgress.status === 'stopped' || scanProgress.status === 'failed' || scanProgress.status === 'idle') ? (
+                    <button
+                      onClick={() => { setShowScanModal(false); setScanProgress(null); setScanning(null); }}
+                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                    >
+                      Close
+                    </button>
+                  ) : (
+                    <button
+                      onClick={stopScan}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      <StopCircle className="w-4 h-4" />
+                      Stop Scanning
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+                <p className="text-gray-500">Initializing scan...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

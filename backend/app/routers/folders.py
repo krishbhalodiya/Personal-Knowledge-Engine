@@ -5,13 +5,13 @@ Manage local folders to scan and index for the knowledge base.
 """
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from ..services.local_scanner import LocalScannerService, get_local_scanner
+from ..services.local_scanner import LocalScannerService, get_local_scanner, get_scan_manager
 from ..services.ingestion import IngestionService, get_ingestion_service
 from ..services.live_search import LiveSearchService, get_live_search_service
 
@@ -44,6 +44,19 @@ class ScanResponse(BaseModel):
     unchanged: int
     indexed: int
     errors: int
+
+
+class ScanStatusResponse(BaseModel):
+    """Response for scan status."""
+    status: str
+    total_files: int
+    processed_files: int
+    current_file: Optional[str]
+    progress_percent: float
+    files_indexed: int
+    errors: int
+    estimated_remaining_seconds: Optional[float]
+    message: Optional[str]
 
 
 # ============================================================================
@@ -128,7 +141,26 @@ async def remove_folder_source(
     return {"message": "Folder removed"}
 
 
-@router.post("/scan/{path:path}", response_model=ScanResponse)
+@router.post("/scan/stop")
+async def stop_scan():
+    """Stop the current scan operation."""
+    manager = get_scan_manager()
+    manager.stop_scan()
+    return {"message": "Scan stop requested"}
+
+
+@router.get("/scan/status")
+async def get_scan_status():
+    """Get the current status of the scan operation."""
+    manager = get_scan_manager()
+    status = manager.get_status()
+    # Convert enum to string for JSON serialization
+    if 'status' in status and hasattr(status['status'], 'value'):
+        status['status'] = status['status'].value
+    return status
+
+
+@router.post("/scan/{path:path}")
 async def scan_folder(
     path: str,
     background_tasks: BackgroundTasks,
@@ -143,52 +175,76 @@ async def scan_folder(
     2. Check which files are new or modified
     3. Index new/modified files
     4. Skip unchanged files
+    
+    Returns immediately and runs scan in background.
+    Use /folders/scan/status to check progress.
     """
     if path.startswith("~"):
         path = str(Path(path).expanduser())
     
-    try:
-        stats = await scanner.scan_folder(path, ingestion)
-        return ScanResponse(**stats)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Scan failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    async def _run_scan():
+        try:
+            await scanner.scan_folder(path, ingestion, is_background=True)
+        except Exception as e:
+            logger.error(f"Background scan failed: {e}")
+            manager = get_scan_manager()
+            manager.fail_scan(str(e))
+    
+    background_tasks.add_task(_run_scan)
+    return {"message": "Scan started in background", "status_endpoint": "/api/folders/scan/status"}
 
 
 @router.post("/scan-all")
 async def scan_all_folders(
+    background_tasks: BackgroundTasks,
     scanner: LocalScannerService = Depends(get_local_scanner),
     ingestion: IngestionService = Depends(get_ingestion_service),
 ):
     """
-    Scan all enabled folder sources.
-    
-    Returns combined statistics from all scans.
+    Scan all enabled folder sources in the background.
     """
-    total_stats = {
-        "discovered": 0,
-        "new": 0,
-        "modified": 0,
-        "unchanged": 0,
-        "indexed": 0,
-        "errors": 0,
-        "folders_scanned": 0,
-    }
+    manager = get_scan_manager()
     
-    for source in scanner.sources:
-        if source.enabled:
-            try:
-                stats = await scanner.scan_folder(source.path, ingestion)
-                for key in ["discovered", "new", "modified", "unchanged", "indexed", "errors"]:
-                    total_stats[key] += stats[key]
-                total_stats["folders_scanned"] += 1
-            except Exception as e:
-                logger.error(f"Failed to scan {source.path}: {e}")
-                total_stats["errors"] += 1
+    async def _run_scan_all():
+        total_stats = {
+            "discovered": 0,
+            "new": 0,
+            "modified": 0,
+            "unchanged": 0,
+            "indexed": 0,
+            "errors": 0,
+            "folders_scanned": 0,
+        }
+        
+        # Calculate total files first for progress bar
+        all_files = []
+        for source in scanner.sources:
+            if source.enabled:
+                files = scanner.discover_files(source)
+                all_files.extend(files)
+        
+        manager.start_scan(total_files=len(all_files))
+        
+        for source in scanner.sources:
+            if source.enabled and not manager.should_stop:
+                try:
+                    # Pass is_background=False so it doesn't reset the manager
+                    stats = await scanner.scan_folder(source.path, ingestion, is_background=False)
+                    for key in ["discovered", "new", "modified", "unchanged", "indexed", "errors"]:
+                        total_stats[key] += stats[key]
+                    total_stats["folders_scanned"] += 1
+                except Exception as e:
+                    logger.error(f"Failed to scan {source.path}: {e}")
+                    total_stats["errors"] += 1
+        
+        if not manager.should_stop:
+            manager.complete_scan()
+        else:
+            manager.state.status = "stopped"
+            
+    background_tasks.add_task(_run_scan_all)
     
-    return total_stats
+    return {"message": "Background scan started"}
 
 
 @router.get("/suggestions")
@@ -401,4 +457,3 @@ async def get_live_file_content(
         "filename": Path(path).name,
         "content": content,
     }
-

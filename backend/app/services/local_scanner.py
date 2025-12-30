@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass, asdict
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from enum import Enum
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent, FileDeletedEvent
@@ -85,6 +86,107 @@ class ScannedFile:
     document_id: Optional[str] = None
 
 
+class ScanStatus(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    STOPPED = "stopped"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass
+class ScanProgress:
+    status: ScanStatus = ScanStatus.IDLE
+    total_files: int = 0
+    processed_files: int = 0
+    current_file: Optional[str] = None
+    start_time: Optional[float] = None
+    files_indexed: int = 0
+    errors: int = 0
+    message: Optional[str] = None
+    
+    @property
+    def progress_percent(self) -> float:
+        if self.total_files == 0:
+            return 0.0
+        return min(100.0, (self.processed_files / self.total_files) * 100)
+    
+    @property
+    def estimated_time_remaining(self) -> Optional[float]:
+        if self.status != ScanStatus.RUNNING or self.processed_files == 0 or not self.start_time:
+            return None
+        
+        import time
+        elapsed = time.time() - self.start_time
+        avg_time_per_file = elapsed / self.processed_files
+        remaining_files = self.total_files - self.processed_files
+        return remaining_files * avg_time_per_file
+
+
+class ScanManager:
+    """Singleton to manage scan state and cancellation."""
+    
+    def __init__(self):
+        self.state = ScanProgress()
+        self._cancel_flag = False
+    
+    def start_scan(self, total_files: int):
+        import time
+        self.state = ScanProgress(
+            status=ScanStatus.RUNNING,
+            total_files=total_files,
+            start_time=time.time(),
+            message="Starting scan..."
+        )
+        self._cancel_flag = False
+    
+    def update_progress(self, current_file: str, indexed: bool = False, error: bool = False):
+        self.state.processed_files += 1
+        self.state.current_file = current_file
+        if indexed:
+            self.state.files_indexed += 1
+        if error:
+            self.state.errors += 1
+    
+    def stop_scan(self):
+        if self.state.status == ScanStatus.RUNNING:
+            self.state.status = ScanStatus.STOPPING
+            self.state.message = "Stopping scan..."
+            self._cancel_flag = True
+    
+    def complete_scan(self):
+        self.state.status = ScanStatus.COMPLETED
+        self.state.current_file = None
+        self.state.message = "Scan completed"
+    
+    def fail_scan(self, error: str):
+        self.state.status = ScanStatus.FAILED
+        self.state.message = f"Scan failed: {error}"
+        self.state.current_file = None
+    
+    @property
+    def should_stop(self) -> bool:
+        return self._cancel_flag
+
+    def get_status(self) -> dict:
+        status_dict = asdict(self.state)
+        # Convert enum to string
+        status_dict['status'] = self.state.status.value if hasattr(self.state.status, 'value') else str(self.state.status)
+        # Convert start_time to None for JSON (or keep as float)
+        # Add computed properties
+        status_dict['progress_percent'] = self.state.progress_percent
+        estimated = self.state.estimated_time_remaining
+        status_dict['estimated_remaining_seconds'] = estimated if estimated is not None else None
+        return status_dict
+
+
+_scan_manager = ScanManager()
+
+def get_scan_manager() -> ScanManager:
+    return _scan_manager
+
+
 class LocalScannerService:
     """Service for scanning and watching local folders."""
     
@@ -97,6 +199,7 @@ class LocalScannerService:
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._load_config()
         self._load_scan_state()
+        self.scan_manager = get_scan_manager()
     
     def _load_config(self):
         """Load folder sources configuration."""
@@ -298,7 +401,7 @@ class LocalScannerService:
         self, 
         source_path: str,
         ingestion_service,  # Avoid circular import
-        progress_callback=None,
+        is_background: bool = True,
     ) -> Dict[str, int]:
         """Scan a folder and index new/modified files."""
         
@@ -330,8 +433,18 @@ class LocalScannerService:
         
         logger.info(f"Discovered {len(files)} files in {source_path}")
         
+        # Initialize scan manager if not part of a larger scan
+        if is_background and self.scan_manager.state.status != ScanStatus.RUNNING:
+            self.scan_manager.start_scan(total_files=len(files))
+        
         # Process files
         for i, file_path in enumerate(files):
+            # Check for cancellation
+            if self.scan_manager.should_stop:
+                logger.info("Scan stopped by user")
+                self.scan_manager.state.status = ScanStatus.STOPPED
+                break
+
             try:
                 str_path = str(file_path)
                 file_stat = file_path.stat()
@@ -340,12 +453,16 @@ class LocalScannerService:
                 # Check if already indexed
                 existing = self.scan_state.get(str_path)
                 
+                should_index = False
+                
                 if existing:
                     if existing.content_hash == content_hash:
                         stats["unchanged"] += 1
+                        self.scan_manager.update_progress(file_path.name, indexed=False)
                         continue
                     else:
                         stats["modified"] += 1
+                        should_index = True
                         # Delete old document if exists
                         if existing.document_id:
                             try:
@@ -354,43 +471,51 @@ class LocalScannerService:
                                 pass
                 else:
                     stats["new"] += 1
+                    should_index = True
                 
-                # Read and index file
-                content = file_path.read_bytes()
+                if should_index:
+                    # Update manager with current file
+                    self.scan_manager.state.current_file = f"Indexing {file_path.name}..."
+                    
+                    # Read and index file
+                    content = file_path.read_bytes()
+                    
+                    # Ingest with source metadata
+                    doc = await ingestion_service.ingest_bytes(
+                        content=content,
+                        filename=file_path.name,
+                        title=file_path.stem,
+                        metadata={
+                            "source": "local_folder",
+                            "source_path": source_path,
+                            "full_path": str_path,
+                            "display_path": self._get_display_name(str_path),
+                        }
+                    )
+                    
+                    # Update scan state
+                    self.scan_state[str_path] = ScannedFile(
+                        path=str_path,
+                        filename=file_path.name,
+                        extension=file_path.suffix.lower(),
+                        size_bytes=file_stat.st_size,
+                        modified_at=datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+                        content_hash=content_hash,
+                        indexed=True,
+                        document_id=doc.id,
+                    )
+                    
+                    stats["indexed"] += 1
+                    self.scan_manager.update_progress(file_path.name, indexed=True)
                 
-                # Ingest with source metadata
-                doc = await ingestion_service.ingest_bytes(
-                    content=content,
-                    filename=file_path.name,
-                    title=file_path.stem,
-                    metadata={
-                        "source": "local_folder",
-                        "source_path": source_path,
-                        "full_path": str_path,
-                        "display_path": self._get_display_name(str_path),
-                    }
-                )
-                
-                # Update scan state
-                self.scan_state[str_path] = ScannedFile(
-                    path=str_path,
-                    filename=file_path.name,
-                    extension=file_path.suffix.lower(),
-                    size_bytes=file_stat.st_size,
-                    modified_at=datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-                    content_hash=content_hash,
-                    indexed=True,
-                    document_id=doc.id,
-                )
-                
-                stats["indexed"] += 1
-                
-                if progress_callback:
-                    progress_callback(i + 1, len(files), file_path.name)
+                # Save state periodically
+                if i % 10 == 0:
+                    self._save_scan_state()
                     
             except Exception as e:
                 logger.warning(f"Failed to index {file_path}: {e}")
                 stats["errors"] += 1
+                self.scan_manager.update_progress(file_path.name, error=True)
         
         # Update source stats
         source.last_scan = datetime.utcnow().isoformat()
@@ -399,6 +524,12 @@ class LocalScannerService:
         self._save_scan_state()
         
         logger.info(f"Scan complete: {stats}")
+        
+        # Only mark complete if this was the main scan initiator
+        if is_background:
+            if self.scan_manager.state.status != ScanStatus.STOPPED:
+                self.scan_manager.complete_scan()
+            
         return stats
     
     def get_scan_stats(self) -> Dict[str, Any]:
@@ -440,4 +571,3 @@ def get_local_scanner() -> LocalScannerService:
     if _scanner_service is None:
         _scanner_service = LocalScannerService()
     return _scanner_service
-
