@@ -332,11 +332,11 @@ export default function SearchPage() {
         <p className="text-center text-xs mb-5 px-4">
           {searchMode === 'indexed' ? (
             <span className="text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
-              ⚠️ Uses API calls • Searches pre-indexed documents
+              Uses API calls • Searches pre-indexed documents
             </span>
           ) : (
             <span className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
-              ✅ FREE • Searches local files on-demand
+              Free • Searches local files on-demand
             </span>
           )}
         </p>
@@ -379,7 +379,7 @@ export default function SearchPage() {
                     <p className="text-sm text-red-700">{error}</p>
                     {error.includes('quota') && (
                       <p className="text-xs text-red-600 mt-2">
-                        💡 Switch to "Live Local" mode or change to local embeddings in Settings.
+                        Switch to "Live Local" mode or change to local embeddings in Settings.
                       </p>
                     )}
                   </div>

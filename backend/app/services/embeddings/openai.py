@@ -1,162 +1,5 @@
 """
 OpenAI Embedding Provider - Uses OpenAI's API for cloud-based embeddings.
-
-================================================================================
-HOW OPENAI EMBEDDINGS API WORKS
-================================================================================
-
-When you call OpenAI's embedding API, here's what happens:
-
-YOUR APP                                    OPENAI SERVERS
-────────                                    ──────────────
-
-1. PREPARE REQUEST
-   ┌────────────────────────────────────┐
-   │ {                                  │
-   │   "model": "text-embedding-ada-002"│
-   │   "input": "Machine learning..."   │
-   │ }                                  │
-   └────────────────────────────────────┘
-                    │
-                    │ HTTPS POST
-                    │ api.openai.com/v1/embeddings
-                    │ Authorization: Bearer sk-...
-                    │
-                    ▼
-2. OPENAI PROCESSING
-   ┌────────────────────────────────────────────────────────┐
-   │                                                        │
-   │  ┌──────────────────┐                                 │
-   │  │ Load Balancer    │  Distributes across GPU farms   │
-   │  └────────┬─────────┘                                 │
-   │           │                                           │
-   │           ▼                                           │
-   │  ┌──────────────────┐                                 │
-   │  │ Tokenizer        │  Text → tokens (cl100k_base)    │
-   │  └────────┬─────────┘                                 │
-   │           │                                           │
-   │           ▼                                           │
-   │  ┌──────────────────┐                                 │
-   │  │ Ada-002 Model    │  8192 token context            │
-   │  │ (Transformer)    │  1536-dim output               │
-   │  │                  │  Runs on NVIDIA A100 GPUs      │
-   │  └────────┬─────────┘                                 │
-   │           │                                           │
-   │           ▼                                           │
-   │  ┌──────────────────┐                                 │
-   │  │ Response Builder │  Package embedding + metadata   │
-   │  └──────────────────┘                                 │
-   │                                                        │
-   └────────────────────────────────────────────────────────┘
-                    │
-                    │ HTTPS Response
-                    │
-                    ▼
-3. RECEIVE RESPONSE
-   ┌────────────────────────────────────────────────────────┐
-   │ {                                                      │
-   │   "object": "list",                                    │
-   │   "data": [{                                           │
-   │     "object": "embedding",                             │
-   │     "index": 0,                                        │
-   │     "embedding": [0.0023, -0.0092, 0.0156, ...]       │
-   │   }],                                                  │
-   │   "model": "text-embedding-ada-002",                   │
-   │   "usage": {                                           │
-   │     "prompt_tokens": 5,                                │
-   │     "total_tokens": 5                                  │
-   │   }                                                    │
-   │ }                                                      │
-   └────────────────────────────────────────────────────────┘
-
-
-================================================================================
-WHAT IS ADA-002?
-================================================================================
-
-Ada-002 is OpenAI's second-generation embedding model:
-
-ARCHITECTURE (Speculated, OpenAI doesn't publish details):
-- Based on GPT-3 architecture (transformer)
-- Optimized for embedding generation (not text generation)
-- Uses special pooling to produce fixed-size output
-- Trained on massive dataset of text pairs
-
-CAPABILITIES:
-- Context window: 8191 tokens (~32,000 characters)
-- Output dimension: 1536 (4x larger than MiniLM)
-- Languages: Excellent for English, good for 100+ languages
-- Quality: State-of-the-art for many benchmarks
-
-PRICING (as of 2024):
-- $0.0001 per 1,000 tokens
-- ~4 chars = 1 token
-- 1 million words ≈ $0.10
-
-Example cost:
-- 1000 documents × 500 words each = 500,000 words
-- 500,000 words × 1.3 tokens/word = 650,000 tokens
-- Cost = $0.065 (about 6 cents!)
-
-
-================================================================================
-BATCHING IN OPENAI API
-================================================================================
-
-OpenAI's API is optimized for batch requests:
-
-SINGLE REQUESTS (Inefficient):
-─────────────────────────────
-Request 1: "Text 1" → Response (100ms)
-Request 2: "Text 2" → Response (100ms)
-Request 3: "Text 3" → Response (100ms)
-Total: 300ms + connection overhead
-
-BATCH REQUEST (Efficient):
-──────────────────────────
-Request: ["Text 1", "Text 2", "Text 3"] → Response (150ms)
-Total: 150ms, 3 embeddings
-
-OpenAI processes batches in parallel on their GPUs!
-
-RATE LIMITS:
-- 3,000 requests per minute
-- 1,000,000 tokens per minute
-- Batch up to 2048 texts per request
-
-
-================================================================================
-SECURITY CONSIDERATIONS
-================================================================================
-
-When using OpenAI's API:
-
-DATA SENT TO OPENAI:
-- Your API key (in header)
-- The text you want to embed
-- Your IP address
-
-DATA OPENAI RETURNS:
-- The embedding vector
-- Token count used
-
-PRIVACY IMPLICATIONS:
-⚠️ Your document content is sent to OpenAI's servers
-⚠️ OpenAI may log requests for abuse monitoring
-⚠️ Data travels over the internet (HTTPS encrypted)
-
-OpenAI's data policy:
-- API data NOT used to train models (as of 2024)
-- 30-day retention for abuse monitoring
-- Enterprise plans offer zero retention
-
-For sensitive data, consider:
-- Using local embeddings (MiniLM)
-- Self-hosted models
-- Azure OpenAI with data residency
-
-
-================================================================================
 """
 
 import logging
@@ -172,38 +15,6 @@ logger = logging.getLogger(__name__)
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     """
     OpenAI embedding provider using the OpenAI API.
-    
-    ADVANTAGES:
-    ===========
-    ✅ Highest quality embeddings
-    ✅ No local compute needed
-    ✅ Fast (OpenAI's GPUs are powerful)
-    ✅ Handles long texts (8191 tokens)
-    ✅ Multilingual support
-    
-    DISADVANTAGES:
-    ==============
-    ❌ Costs money ($0.0001/1K tokens)
-    ❌ Requires internet connection
-    ❌ Data sent to OpenAI (privacy concern)
-    ❌ Rate limits
-    ❌ API can be slow/unavailable
-    
-    API KEY SETUP:
-    ==============
-    1. Go to platform.openai.com
-    2. Create account / sign in
-    3. Go to API Keys section
-    4. Create new secret key
-    5. Set OPENAI_API_KEY environment variable
-    
-    USAGE:
-    ======
-    # Set API key in environment or .env file
-    # OPENAI_API_KEY=sk-...
-    
-    provider = OpenAIEmbeddingProvider()
-    vector = provider.embed("Hello world")  # Returns 1536-dim vector
     """
     
     def __init__(
@@ -239,13 +50,6 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     def _get_client(self):
         """
         Get or create the OpenAI client.
-        
-        WHY LAZY LOADING?
-        =================
-        - Importing 'openai' takes time
-        - Client creation validates API key
-        - Fail fast if key is invalid
-        - But only when actually used
         """
         if self._client is not None:
             return self._client
@@ -281,37 +85,11 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         """
         Generate embedding for a single text using OpenAI API.
         
-        API CALL BREAKDOWN:
-        ===================
-        
-        1. Validate input
-        2. Create API request
-        3. Send to api.openai.com/v1/embeddings
-        4. Parse response
-        5. Return embedding vector
-        
-        WHAT THE API RETURNS:
-        =====================
-        {
-            "object": "list",
-            "data": [{
-                "object": "embedding",
-                "index": 0,
-                "embedding": [0.0023, -0.0092, ...]  # 1536 floats
-            }],
-            "model": "text-embedding-ada-002",
-            "usage": {"prompt_tokens": 5, "total_tokens": 5}
-        }
-        
         Args:
             text: Text to embed
         
         Returns:
             1536-dimensional vector as list of floats
-        
-        Raises:
-            ValueError: If API key not configured
-            openai.APIError: If API call fails
         """
         client = self._get_client()
         
@@ -322,16 +100,12 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         
         try:
             # Make API call
-            # The model parameter specifies which embedding model to use
-            # Input can be a string or list of strings
             response = client.embeddings.create(
                 model=self._model_name,
                 input=text,
             )
             
             # Extract embedding from response
-            # response.data is a list of embedding objects
-            # We sent one text, so we get one embedding at index 0
             embedding = response.data[0].embedding
             
             # Log token usage for cost tracking
@@ -355,25 +129,6 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """
         Generate embeddings for multiple texts in a single API call.
-        
-        BATCH API CALL:
-        ===============
-        
-        Instead of:
-            POST /embeddings {"input": "text1"}
-            POST /embeddings {"input": "text2"}
-            POST /embeddings {"input": "text3"}
-        
-        We send:
-            POST /embeddings {"input": ["text1", "text2", "text3"]}
-        
-        OpenAI processes all texts in parallel on their GPUs!
-        
-        BATCH LIMITS:
-        =============
-        - Max 2048 texts per request
-        - Max 8191 tokens per text
-        - We chunk into batches of 100 for safety
         
         Args:
             texts: List of texts to embed
@@ -412,7 +167,6 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                 )
                 
                 # Extract embeddings (maintain order)
-                # Response data is in same order as input
                 batch_embeddings = [item.embedding for item in response.data]
                 all_embeddings.extend(batch_embeddings)
                 
@@ -450,20 +204,6 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     def estimate_cost(self, texts: List[str]) -> dict:
         """
         Estimate the cost of embedding these texts.
-        
-        COST CALCULATION:
-        =================
-        
-        Ada-002 pricing: $0.0001 per 1,000 tokens
-        
-        Token estimation:
-        - Average English word ≈ 1.3 tokens
-        - We estimate: chars / 4 ≈ tokens
-        
-        Example:
-        - 1000 documents × 1000 chars = 1,000,000 chars
-        - 1,000,000 / 4 = 250,000 tokens
-        - Cost = 250,000 / 1000 × $0.0001 = $0.025
         
         Args:
             texts: List of texts to estimate
@@ -504,4 +244,3 @@ def get_openai_embedding_provider() -> OpenAIEmbeddingProvider:
     if _openai_provider is None:
         _openai_provider = OpenAIEmbeddingProvider()
     return _openai_provider
-

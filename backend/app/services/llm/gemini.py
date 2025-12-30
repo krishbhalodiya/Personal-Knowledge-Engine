@@ -1,22 +1,5 @@
 """
 Gemini LLM Provider - Uses Google's Generative AI API.
-
-================================================================================
-GEMINI API
-================================================================================
-
-Google's Gemini models are multimodal and handle massive context windows.
-- Gemini 1.5 Pro: 1M token context (can read whole books!)
-- Gemini 1.5 Flash: Fast, cheap
-
-We use the `google-generativeai` SDK.
-
-Authentication:
-Using API Key (AI Studio) is simplest for prototyping.
-For production (Vertex AI), we'd use Application Default Credentials.
-We'll implement the API Key method here.
-
-================================================================================
 """
 
 import logging
@@ -141,4 +124,3 @@ class GeminiLLMProvider(LLMProvider):
         except Exception as e:
             logger.error(f"Gemini stream failed: {e}")
             raise
-

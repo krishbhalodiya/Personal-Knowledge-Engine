@@ -112,9 +112,9 @@ export default function SourcesPage() {
   const scanAllFolders = async () => {
     const enabledCount = sources.filter(s => s.enabled).length;
     if (!confirm(
-      `⚠️ WARNING: Scanning ${enabledCount} enabled folder(s) will use API calls (costs money).\n\n` +
+      `WARNING: Scanning ${enabledCount} enabled folder(s) will use API calls (costs money).\n\n` +
       `For large folders, this can be VERY expensive.\n\n` +
-      `💡 Consider using "Live Local" search instead (free, no indexing).\n\n` +
+      `Consider using "Live Local" search instead (free, no indexing).\n\n` +
       `Continue anyway?`
     )) {
       return;
@@ -254,11 +254,11 @@ export default function SourcesPage() {
       <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800">
         <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="font-semibold text-sm mb-1">⚠️ API Costs Warning</p>
+          <p className="font-semibold text-sm mb-1">API Costs Warning</p>
           <p className="text-xs">
             <strong>Scanning/Indexing uses API calls</strong> (OpenAI embeddings) which cost money. 
             For large folders, this can be expensive. 
-            <strong className="block mt-1">💡 Tip: Use "Live Local" search mode instead</strong> - it searches files on-demand without indexing (free, no API calls)!
+            <strong className="block mt-1">Tip: Use "Live Local" search mode instead</strong> - it searches files on-demand without indexing (free, no API calls)!
           </p>
         </div>
       </div>
@@ -381,7 +381,7 @@ export default function SourcesPage() {
                     {/* Scan */}
                     <button
                       onClick={() => {
-                        if (!confirm(`⚠️ WARNING: Scanning "${source.display_name}" will use API calls (costs money).\n\nFor large folders, this can be expensive.\n\nConsider using "Live Local" search instead (free, no indexing).\n\nContinue anyway?`)) {
+                        if (!confirm(`WARNING: Scanning "${source.display_name}" will use API calls (costs money).\n\nFor large folders, this can be expensive.\n\nConsider using "Live Local" search instead (free, no indexing).\n\nContinue anyway?`)) {
                           return;
                         }
                         scanFolder(source.path);

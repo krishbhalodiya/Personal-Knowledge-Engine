@@ -59,7 +59,7 @@ class VectorStoreService:
                             f"1. Reset the knowledge base: DELETE http://localhost:8000/api/documents/reset\n"
                             f"2. OR switch to the embedding provider/model that matches the collection dimension\n"
                             f"   (Collection dimension: {existing_dim})\n\n"
-                            f"⚠️ DO NOT continue with mismatched dimensions - it will break everything!"
+                            f"DO NOT continue with mismatched dimensions - it will break everything!"
                         )
                     elif existing_dim:
                         logger.info(f"Collection dimension verified: {existing_dim} (matches current settings)")

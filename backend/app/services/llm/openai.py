@@ -1,23 +1,5 @@
 """
 OpenAI LLM Provider - Uses OpenAI's Chat Completion API.
-
-================================================================================
-HOW OPENAI CHAT API WORKS
-================================================================================
-
-We send a list of messages:
-[
-  {"role": "system", "content": "You are a helpful assistant..."},
-  {"role": "user", "content": "How do embeddings work?"}
-]
-
-OpenAI returns a response.
-
-STREAMING:
-OpenAI supports Server-Sent Events (SSE). The Python client handles this
-and exposes an iterator. We wrap this in an async generator.
-
-================================================================================
 """
 
 import logging
@@ -123,4 +105,3 @@ class OpenAILLMProvider(LLMProvider):
         except Exception as e:
             logger.error(f"OpenAI stream failed: {e}")
             raise
-

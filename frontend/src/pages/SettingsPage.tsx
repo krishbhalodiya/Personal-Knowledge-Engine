@@ -87,7 +87,7 @@ export default function SettingsPage() {
           Embedding Provider
         </h2>
         <p className="text-xs text-amber-600 mb-4">
-          ⚠️ Changing embedding model requires re-indexing all documents
+          Changing embedding model requires re-indexing all documents
         </p>
         
         <div className="space-y-3">
@@ -126,8 +126,8 @@ export default function SettingsPage() {
                           }`}
                         >
                           {model}
-                          {info.cost === 'cheap' && <span className="ml-1 text-emerald-600">💰</span>}
-                          {info.cost === 'expensive' && <span className="ml-1 text-amber-600">💸</span>}
+                          {info.cost === 'cheap' && <span className="ml-1 text-emerald-600">$</span>}
+                          {info.cost === 'expensive' && <span className="ml-1 text-amber-600">$$$</span>}
                         </button>
                       ))}
                     </div>

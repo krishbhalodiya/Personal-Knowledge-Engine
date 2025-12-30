@@ -164,7 +164,7 @@ async def switch_embedding_model(
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"⚠️ CANNOT switch embedding model: Dimension mismatch!\n\n"
+                        f"CANNOT switch embedding model: Dimension mismatch!\n\n"
                         f"Current collection uses {collection_dim}-dimensional embeddings ({collection_count} documents indexed).\n"
                         f"New model '{model}' uses {new_dimension}-dimensional embeddings.\n\n"
                         f"This mismatch will break all search and indexing operations!\n\n"
@@ -172,7 +172,7 @@ async def switch_embedding_model(
                         f"1. Reset the knowledge base first: DELETE /api/documents/reset\n"
                         f"2. Then switch to the new model\n"
                         f"3. Re-index all documents\n\n"
-                        f"⚠️ DO NOT proceed without resetting - it will break everything!"
+                        f"DO NOT proceed without resetting - it will break everything!"
                     )
                 )
     except HTTPException:
@@ -190,7 +190,7 @@ async def switch_embedding_model(
         "message": f"Embedding model switched to {model}",
         "model": model,
         "dimension": new_dimension,
-        "warning": "⚠️ Changing embedding models requires re-indexing all documents!" if collection_count > 0 else None
+        "warning": "Changing embedding models requires re-indexing all documents!" if collection_count > 0 else None
     }
 
 
@@ -289,7 +289,7 @@ async def switch_embedding_provider(request: SwitchEmbeddingRequest):
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"⚠️ CANNOT switch embedding provider: Dimension mismatch!\n\n"
+                        f"CANNOT switch embedding provider: Dimension mismatch!\n\n"
                         f"Current collection uses {collection_dim}-dimensional embeddings ({collection_count} documents indexed).\n"
                         f"New provider '{request.provider}' uses {new_dimension}-dimensional embeddings.\n\n"
                         f"This mismatch will break all search and indexing operations!\n\n"
@@ -297,7 +297,7 @@ async def switch_embedding_provider(request: SwitchEmbeddingRequest):
                         f"1. Reset the knowledge base first: DELETE /api/documents/reset\n"
                         f"2. Then switch to the new provider\n"
                         f"3. Re-index all documents\n\n"
-                        f"⚠️ DO NOT proceed without resetting - it will break everything!"
+                        f"DO NOT proceed without resetting - it will break everything!"
                     )
                 )
     except HTTPException:
@@ -318,7 +318,7 @@ async def switch_embedding_provider(request: SwitchEmbeddingRequest):
         
         warning = None
         if collection_count > 0:
-            warning = "⚠️ Changing embedding providers requires re-indexing all documents!"
+            warning = "Changing embedding providers requires re-indexing all documents!"
         
         return SwitchEmbeddingResponse(
             success=True,
